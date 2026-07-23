@@ -1,0 +1,45 @@
+name: Build & deploy to itch.io
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.7"
+  # itch.io target — update the game slug here once the jam page exists
+  ITCH_TARGET: jandhi/gmtk-2026
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          mv /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+
+      - name: Import assets
+        run: godot --headless --import --path . || true
+
+      - name: Export web build
+        run: |
+          mkdir -p build/web
+          godot --headless --export-release Web build/web/index.html
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: build/web
+
+      - name: Push to itch.io
+        if: ${{ secrets.BUTLER_API_KEY != '' }}
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: butler push build/web $ITCH_TARGET:html5 --userversion "1.0-$GITHUB_SHA"
