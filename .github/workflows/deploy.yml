@@ -8,7 +8,7 @@ on:
 env:
   GODOT_VERSION: "4.7"
   # itch.io target — update the game slug here once the jam page exists
-  ITCH_TARGET: jandhi/gmtk-2026
+  ITCH_TARGET: jandhi/gmtk-jam-2026
 
 jobs:
   web:

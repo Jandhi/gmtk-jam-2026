@@ -8,7 +8,7 @@ Godot 4.7 game jam project targeting a **web build on itch.io** (Compatibility r
 - Run the game headless-checked: `<godot> --path . --quit-after 2 --headless` (verifies autoloads + main scene load)
 - Reimport assets after adding files outside the editor: `<godot> --headless --import --path .`
 - Web build + zip for itch.io: `./build_web.sh` (output: `build/web.zip`)
-- CI: pushing to `main` runs `.github/workflows/deploy.yml` — exports web and butler-pushes to itch.io (`jandhi/gmtk-2026`, html5 channel). Needs `BUTLER_API_KEY` repo secret.
+- CI: pushing to `main` runs `.github/workflows/deploy.yml` — exports web and butler-pushes to itch.io (`jandhi/gmtk-jam-2026`, html5 channel). Needs `BUTLER_API_KEY` repo secret.
 
 ## Structure
 
