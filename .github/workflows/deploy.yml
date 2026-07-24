@@ -3,6 +3,9 @@ name: Build & deploy to itch.io
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   workflow_dispatch:
 
 env:
@@ -28,6 +31,9 @@ jobs:
 
       - name: Import assets
         run: godot --headless --import --path . || true
+
+      - name: Run sim tests
+        run: godot --headless --path . --script res://scripts/tests/sim_test.gd
 
       - name: Export web build
         run: |
