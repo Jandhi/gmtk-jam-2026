@@ -1,0 +1,13 @@
+name,health,armour,power,delay,action,range,initiative,abilities
+Goblin,8,0,3,2,strike,1,8,
+Wolf,10,0,4,2,strike,1,12,fast
+Skeleton,6,1,3,2,strike,1,6,
+Knight,18,3,5,3,strike,1,7,
+Ogre,22,1,8,4,strike,1,4,slow
+Guard,14,2,4,3,shield_strike,1,6,
+Gladiator,16,1,6,3,riposte,1,9,
+Scout,8,0,4,3,shoot,4,10,
+Assassin,10,0,7,3,skirmish,1,14,ignores_armour
+Mage,8,0,6,4,blast,4,7,
+Adult Red Dragon,30,3,9,5,line,4,11,
+Priest,10,0,4,3,heal,0,5,
