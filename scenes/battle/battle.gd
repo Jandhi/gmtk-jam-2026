@@ -1,11 +1,13 @@
-extends Node2D
+extends Control
 ## Battle scene: turn loop, input, and event playback.
 ## All gameplay lives in Sim — this file only sends orders in and animates
 ## the SimEvents that come back.
 
 const CELL := 96
-const GRID_POS := Vector2(52, 120)
+const GRID_POS := Vector2(52, 180)
 const ORDERS_PER_TURN := 2
+
+const UNIT_VIEW_SCENE := preload("res://scenes/battle/unit_view.tscn")
 
 const ORDER_DEFS := [
 	[Order.ADVANCE, "1 Advance"],
@@ -18,7 +20,7 @@ const ORDER_DEFS := [
 
 var sim: Sim
 var db: Dictionary
-var views := {}  # unit_id -> UnitView
+var views := {}  # unit_id -> UnitController (unit_view.tscn)
 var selected_id := -1
 var queued: Array = []
 var busy := false
@@ -31,11 +33,15 @@ var _tooltip_label: Label
 var _banner: Label
 var _restart_btn: Button
 var _fx_layer: Node2D
+var _overlay: Node2D  # grid + selection, above the background but below units
 
 
 func _ready() -> void:
 	db = CreatureDB.load_all()
 	sim = Sim.new(randi())
+	_overlay = Node2D.new()
+	add_child(_overlay)
+	_overlay.draw.connect(_draw_overlay)
 	_spawn_armies()
 	_fx_layer = Node2D.new()
 	add_child(_fx_layer)
@@ -69,7 +75,7 @@ func _spawn_armies() -> void:
 
 
 func _spawn_view(unit: SimUnit) -> void:
-	var v := UnitView.new()
+	var v: UnitController = UNIT_VIEW_SCENE.instantiate()
 	v.position = cell_pos(unit.lane, unit.col)
 	add_child(v)
 	v.setup(unit)
@@ -102,7 +108,7 @@ func _build_ui() -> void:
 
 	_status_label = Label.new()
 	_status_label.position = Vector2(52, 56)
-	_status_label.add_theme_font_size_override("font_size", 15)
+	_status_label.add_theme_font_size_override("font_size", 20)
 	_status_label.modulate = Color(0.85, 0.85, 0.85)
 	layer.add_child(_status_label)
 
@@ -113,18 +119,20 @@ func _build_ui() -> void:
 	for def in ORDER_DEFS:
 		var btn := Button.new()
 		btn.text = def[1]
+		btn.add_theme_font_size_override("font_size", 20)
 		btn.custom_minimum_size = Vector2(130, 44)
 		btn.pressed.connect(_queue_order.bind(def[0]))
 		bar.add_child(btn)
 	_end_turn_btn = Button.new()
 	_end_turn_btn.text = "End Turn (Space)"
+	_end_turn_btn.add_theme_font_size_override("font_size", 20)
 	_end_turn_btn.custom_minimum_size = Vector2(180, 44)
 	_end_turn_btn.pressed.connect(_end_turn)
 	bar.add_child(_end_turn_btn)
 
 	_tooltip = PanelContainer.new()
 	_tooltip_label = Label.new()
-	_tooltip_label.add_theme_font_size_override("font_size", 13)
+	_tooltip_label.add_theme_font_size_override("font_size", 20)
 	_tooltip.add_child(_tooltip_label)
 	_tooltip.visible = false
 	layer.add_child(_tooltip)
@@ -133,12 +141,13 @@ func _build_ui() -> void:
 	_banner.position = Vector2(0, 280)
 	_banner.size = Vector2(1280, 80)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.add_theme_font_size_override("font_size", 52)
+	_banner.add_theme_font_size_override("font_size", 50)
 	_banner.visible = false
 	layer.add_child(_banner)
 
 	_restart_btn = Button.new()
 	_restart_btn.text = "Restart (R)"
+	_restart_btn.add_theme_font_size_override("font_size", 20)
 	_restart_btn.position = Vector2(580, 380)
 	_restart_btn.custom_minimum_size = Vector2(120, 44)
 	_restart_btn.pressed.connect(func(): get_tree().reload_current_scene())
@@ -221,7 +230,7 @@ func _play_events(events: Array) -> void:
 	for e in events:
 		match e.type:
 			&"unit_moved":
-				var v: UnitView = views.get(e.data.unit)
+				var v: UnitController = views.get(e.data.unit)
 				if v != null:
 					var tw := create_tween()
 					tw.tween_property(v, "position", cell_pos(e.data.lane, e.data.col), 0.12)
@@ -232,8 +241,8 @@ func _play_events(events: Array) -> void:
 			&"damage_dealt":
 				var text := "-%d" % e.data.amount if e.data.amount > 0 else "Blocked"
 				_float_text(e.data.target, text, Color(1, 0.4, 0.4))
-				_flash(e.data.target)
-				await _wait(0.22)
+				_hit_reaction(e.data)
+				await _wait(0.26)
 			&"healed":
 				_float_text(e.data.target, "+%d" % e.data.amount, Color(0.4, 1, 0.4))
 				await _wait(0.22)
@@ -244,7 +253,7 @@ func _play_events(events: Array) -> void:
 				_float_text(e.data.unit, "Shield", Color(0.5, 0.7, 1))
 				await _wait(0.12)
 			&"unit_died":
-				var dv: UnitView = views.get(e.data.unit)
+				var dv: UnitController = views.get(e.data.unit)
 				if dv != null:
 					views.erase(e.data.unit)
 					var tw := create_tween()
@@ -266,38 +275,43 @@ func _wait(seconds: float) -> void:
 
 func _refresh_views() -> void:
 	for u in sim.alive_units():
-		var v: UnitView = views.get(u.id)
+		var v: UnitController = views.get(u.id)
 		if v != null:
 			v.refresh(u)
 
 
 func _punch(unit_id: int) -> void:
-	var v: UnitView = views.get(unit_id)
+	var v: UnitController = views.get(unit_id)
 	if v == null:
 		return
-	var tw := create_tween()
-	tw.tween_property(v, "scale", Vector2(1.25, 1.25), 0.06)
-	tw.tween_property(v, "scale", Vector2.ONE, 0.06)
+	v.play_stretch()
 
 
-func _flash(unit_id: int) -> void:
-	var v: UnitView = views.get(unit_id)
-	if v == null:
-		return
-	v.modulate = Color(1, 0.3, 0.3)
-	var tw := create_tween()
-	tw.tween_property(v, "modulate", Color.WHITE, 0.25)
+## Melee: attacker lunges into the defender; any hit: defender knocked back + red flash.
+func _hit_reaction(data: Dictionary) -> void:
+	var av: UnitController = views.get(data.attacker)
+	var tv: UnitController = views.get(data.target)
+	var dir := 1.0
+	if av != null and tv != null and tv.position.x != av.position.x:
+		dir = signf(tv.position.x - av.position.x)
+	if data.get("melee", false) and av != null:
+		av.melee_attack(dir)
+	if tv != null:
+		tv.get_hit(dir)
+		tv.modulate = Color(1, 0.3, 0.3)
+		var tw := create_tween()
+		tw.tween_property(tv, "modulate", Color.WHITE, 0.25)
 
 
 func _float_text(unit_id: int, text: String, color: Color) -> void:
-	var v: UnitView = views.get(unit_id)
+	var v: UnitController = views.get(unit_id)
 	if v == null:
 		return
 	var label := Label.new()
 	label.text = text
 	label.modulate = color
-	label.position = v.position + Vector2(-16, -70)
-	label.add_theme_font_size_override("font_size", 18)
+	label.position = v.position + Vector2(-16, -160)
+	label.add_theme_font_size_override("font_size", 20)
 	_fx_layer.add_child(label)
 	var tw := create_tween()
 	tw.set_parallel(true)
@@ -307,7 +321,7 @@ func _float_text(unit_id: int, text: String, color: Color) -> void:
 
 
 func _process(_delta: float) -> void:
-	queue_redraw()
+	_overlay.queue_redraw()
 	_update_tooltip()
 
 
@@ -332,15 +346,18 @@ func _update_tooltip() -> void:
 	_tooltip.visible = true
 
 
-func _draw() -> void:
+## Drawn on _overlay (via its draw signal) so it renders above the painted
+## background; the root's own _draw would be covered by the TextureRect child.
+func _draw_overlay() -> void:
+	var line_color := Color(0, 0, 0, 0.15)
 	for lane in Sim.LANES + 1:
 		var y := GRID_POS.y + lane * CELL
-		draw_line(Vector2(GRID_POS.x, y), Vector2(GRID_POS.x + Sim.COLS * CELL, y), Color(0.35, 0.35, 0.35), 2.0)
+		_overlay.draw_line(Vector2(GRID_POS.x, y), Vector2(GRID_POS.x + Sim.COLS * CELL, y), line_color, 2.0)
 	for col in Sim.COLS + 1:
 		var x := GRID_POS.x + col * CELL
-		draw_line(Vector2(x, GRID_POS.y), Vector2(x, GRID_POS.y + Sim.LANES * CELL), Color(0.35, 0.35, 0.35), 2.0)
+		_overlay.draw_line(Vector2(x, GRID_POS.y), Vector2(x, GRID_POS.y + Sim.LANES * CELL), line_color, 2.0)
 	if selected_id != -1:
 		var u := sim.get_unit(selected_id)
 		if u != null and u.is_alive():
 			var top_left := GRID_POS + Vector2(u.col * CELL, u.lane * CELL)
-			draw_rect(Rect2(top_left, Vector2(CELL, CELL)), Color(1, 0.9, 0.2), false, 3.0)
+			_overlay.draw_rect(Rect2(top_left, Vector2(CELL, CELL)), Color(1, 0.9, 0.2), false, 3.0)

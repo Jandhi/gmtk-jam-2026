@@ -63,6 +63,32 @@ Rules / open ideas:
 - Hover: deep-dive panel with full stats.
 - Bottom: the 6 order buttons.
 
+## Economy (idea)
+
+Cards + two currencies: **mana** (in-battle, spent to play/discard) and **gold**
+(meta, spent at markets to grow the deck).
+
+Mana:
+
+- Discard a card for 1 mana each — a free action that doesn't advance the clock.
+- Gain 1 mana whenever your forces kill an enemy unit — unless that unit is
+  **Soulless** (gives none). Units with **Powerful Soul** give 3 mana instead.
+
+Cards:
+
+- Draw one card every tick. You can pass if you don't want to play anything.
+- Hand limit: 8.
+
+Farms & the market:
+
+- The lane backgrounds hold **5 farms/goldmines** at fixed columns. If 2 of a
+  player's 3 lanes have advanced past a farm, that player claims it.
+- Every **20 ticks** a **market phase** triggers: earn gold based on farms
+  controlled, spend it on new cards for your deck from a random selection.
+- Gold carries over between market phases.
+- Very expensive action (maybe itself a card): transmute a ton of mana into
+  one gold.
+
 ## Gameplay loop
 
 To not overthink it: borrow the loop logic of Dreadful Company.

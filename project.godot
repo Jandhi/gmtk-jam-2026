@@ -15,10 +15,6 @@ run/main_scene="res://scenes/battle/battle.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
-[audio]
-
-buses/default_bus_layout="res://default_bus_layout.tres"
-
 [autoload]
 
 AudioManager="*res://scripts/autoload/audio_manager.gd"
@@ -29,7 +25,11 @@ SceneChanger="*res://scripts/autoload/scene_changer.gd"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
+window/stretch/aspect="keep"
+
+[gui]
+
+theme/custom_font="res://assets/fonts/Fabled_Font.ttf"
 
 [physics]
 
@@ -38,6 +38,7 @@ window/stretch/aspect="expand"
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true

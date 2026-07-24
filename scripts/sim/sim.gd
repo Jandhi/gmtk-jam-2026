@@ -307,6 +307,7 @@ func _deal_damage(attacker: SimUnit, target: SimUnit, amount: int, is_melee: boo
 	target.hp = maxi(0, target.hp - dmg)
 	events.append(SimEvent.make(&"damage_dealt", {
 		"attacker": attacker.id, "target": target.id, "amount": dmg, "blocked": amount - dmg,
+		"melee": is_melee,
 	}))
 	if not target.is_alive():
 		events.append(SimEvent.make(&"unit_died", {"unit": target.id}))
