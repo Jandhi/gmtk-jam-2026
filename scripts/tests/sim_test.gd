@@ -21,6 +21,7 @@ func _init() -> void:
 	_test_no_rest_after_firing()
 	_test_hasten_fires_instantly()
 	_test_riposte_counters()
+	_test_keep_siege()
 
 	if failures == 0:
 		print("ALL TESTS PASSED")
@@ -117,9 +118,7 @@ func _test_swap_order() -> void:
 	var sim := Sim.new(1)
 	var a := sim.spawn(db["Goblin"], Sim.SIDE_PLAYER, 0, 2)
 	var b := sim.spawn(db["Knight"], Sim.SIDE_PLAYER, 0, 3)
-	# Adjacent ogre keeps both units engaged so the move phase doesn't march them.
-	sim.spawn(db["Ogre"], Sim.SIDE_ENEMY, 0, 4)
-	sim.tick([Order.make(a.id, Order.ADVANCE)])
+	sim.apply_order(Order.make(a.id, Order.ADVANCE))
 	check(a.col == 3 and b.col == 2, "advancing into ally swaps positions")
 
 
@@ -131,9 +130,11 @@ func _test_delay_and_hasten_orders() -> void:
 	sim.tick()  # guard sees ogre within 1+delay and starts winding up
 	check(g.windup == db["Guard"].delay, "guard started windup")
 	var before := g.windup
-	sim.tick([Order.make(g.id, Order.DELAY)])
+	sim.apply_order(Order.make(g.id, Order.DELAY))
+	sim.tick()
 	check(g.windup == before, "delay +1 then tick -1 nets no progress")
-	sim.tick([Order.make(g.id, Order.HASTEN)])
+	sim.apply_order(Order.make(g.id, Order.HASTEN))
+	sim.tick()
 	check(g.windup == before - 2, "hasten -1 plus tick -1")
 
 
@@ -208,3 +209,24 @@ func _test_riposte_counters() -> void:
 	check(not counters.is_empty(), "riposte triggered at least once")
 	check(sim.winner == Sim.SIDE_PLAYER, "gladiator beats goblin")
 	check(glad.hp > 0, "gladiator survived")
+
+
+func _test_keep_siege() -> void:
+	print("keep_siege:")
+	# Goblin at the wall sieges the enemy keep; the priest (other lane, never
+	# marches, nothing to heal) keeps the battle from ending by unit wipe.
+	var sim := Sim.new(3)
+	sim.spawn(db["Goblin"], Sim.SIDE_PLAYER, 0, 11)
+	var priest := sim.spawn(db["Priest"], Sim.SIDE_ENEMY, 2, 11)
+	var events := run_ticks(sim, 400)
+	var hits := events_of(events, &"keep_damaged")
+	check(not hits.is_empty(), "keep took damage")
+	if not hits.is_empty():
+		check(hits[0].data.side == Sim.SIDE_ENEMY, "enemy keep was hit")
+		check(hits[0].data.hp == Sim.KEEP_MAX_HP - db["Goblin"].power, "keep hp dropped by power")
+	var lives := events_of(events, &"keep_life_lost")
+	check(lives.size() == Sim.KEEP_LIVES, "all keep lives lost")
+	if not lives.is_empty():
+		check(lives[0].data.lives == Sim.KEEP_LIVES - 1 and lives[0].data.hp == Sim.KEEP_MAX_HP, "losing a life refills the bar")
+		check(lives.back().data.lives == 0 and lives.back().data.hp == 0, "last life leaves the keep at zero")
+	check(sim.winner == Sim.SIDE_PLAYER and priest.is_alive(), "keep fall wins the battle with defenders alive")

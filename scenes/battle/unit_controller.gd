@@ -46,6 +46,7 @@ const HIT_KNOCKBACK := 16.0
 @onready var action_label: Label = $ActionLabel
 
 var _max_hp := 1
+var _shown_hp := 0
 var _fill_width := 0.0
 var _hover_time := 0.0
 
@@ -67,6 +68,7 @@ func _process(delta: float) -> void:
 func setup(unit: SimUnit) -> void:
 	unit_id = unit.id
 	_max_hp = unit.creature.health
+	_shown_hp = unit.hp
 	_fill_width = health_bar_fill.size.x
 	var tex_path := "res://assets/art/Monsters/%s.PNG" % unit.creature.name
 	if ResourceLoader.exists(tex_path):
@@ -76,6 +78,7 @@ func setup(unit: SimUnit) -> void:
 	health_bar_fill.color = PLAYER_HP_COLOR if unit.side == Sim.SIDE_PLAYER else ENEMY_HP_COLOR
 	_anchor_home = sprite_anchor.position
 	hover_circle.visible = false
+	apply_hp_delta(0)  # paint the initial bar
 	refresh(unit)
 	_start_idle()
 
@@ -141,10 +144,17 @@ func _play_impulse(peak: Vector2) -> void:
 	tw.tween_callback(_loop_idle)
 
 
+## The shown health lags the sim: the sim resolves a whole tick up front, so
+## battle.gd applies damage/heal deltas as each animation lands rather than
+## refresh() reading the (already final) sim hp mid-playback.
+func apply_hp_delta(delta: int) -> void:
+	_shown_hp = clampi(_shown_hp + delta, 0, _max_hp)
+	health_bar_fill.size.x = _fill_width * float(_shown_hp) / float(_max_hp)
+
+
 ## Three display states: winding up (icon + number), marching (shoe),
 ## or genuinely inert (nothing shown).
 func refresh(unit: SimUnit, moving := false) -> void:
-	health_bar_fill.size.x = maxf(0.0, _fill_width * float(unit.hp) / float(_max_hp))
 	delay_label.text = str(unit.windup) if unit.windup > 0 else ""
 	# Active shielding shows as a blue overlay on the health bar, sized in
 	# HP-equivalents of the damage reduction (full bar if it exceeds max HP).

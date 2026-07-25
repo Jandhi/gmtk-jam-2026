@@ -1,6 +1,6 @@
 class_name Order
 extends RefCounted
-## A player order for one unit, applied at the start of the next tick.
+## A player order for one unit, applied instantly via Sim.apply_order().
 
 const ADVANCE := &"advance"
 const RETREAT := &"retreat"

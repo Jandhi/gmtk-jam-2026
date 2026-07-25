@@ -13,7 +13,7 @@ const ORDER_DATA := {
 
 var order_type: StringName = &""
 
-@onready var background: NinePatchRect = $Background
+@onready var background: TextureRect = $Background
 @onready var portrait: TextureRect = $Portrait
 @onready var name_label: Label = $NameLabel
 @onready var cost_label: Label = $CostLabel
@@ -35,6 +35,8 @@ func setup_order(type: StringName) -> void:
 	var icon: String = data.get("icon", "")
 	if not icon.is_empty() and ResourceLoader.exists(icon):
 		portrait.texture = load(icon)
+	else:
+		portrait.texture = null
 
 
 func set_selected(selected: bool) -> void:

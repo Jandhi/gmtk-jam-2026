@@ -1,45 +1,48 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://by3nmxwqnkplx"]
 
-[ext_resource type="Script" path="res://scenes/ui/card_controller.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/art/UI/card.png" id="2"]
+[ext_resource type="Script" uid="uid://cvxxr3vdsu5yv" path="res://scenes/ui/card_controller.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://cy7ouorm8l0mg" path="res://assets/art/UI/card_full.png" id="2"]
 
-[node name="Card" type="Control"]
+[node name="Card" type="Control" unique_id=62231414]
 custom_minimum_size = Vector2(128, 176)
+layout_mode = 3
+anchors_preset = 0
 offset_right = 128.0
 offset_bottom = 176.0
 script = ExtResource("1")
 
-[node name="Background" type="NinePatchRect" parent="."]
+[node name="Background" type="TextureRect" parent="." unique_id=778911663]
+layout_mode = 0
 offset_right = 32.0
 offset_bottom = 44.0
 scale = Vector2(4, 4)
 texture = ExtResource("2")
-patch_margin_left = 4
-patch_margin_top = 4
-patch_margin_right = 4
-patch_margin_bottom = 4
 
-[node name="Portrait" type="TextureRect" parent="."]
+[node name="Portrait" type="TextureRect" parent="." unique_id=1374559363]
+layout_mode = 0
 offset_left = 32.0
 offset_top = 44.0
 offset_right = 96.0
 offset_bottom = 108.0
 stretch_mode = 5
 
-[node name="NameLabel" type="Label" parent="."]
+[node name="NameLabel" type="Label" parent="." unique_id=1331649603]
+layout_mode = 0
+offset_left = 8.0
 offset_top = 10.0
-offset_right = 128.0
-offset_bottom = 34.0
-theme_override_font_sizes/font_size = 20
+offset_right = 120.0
+offset_bottom = 38.0
 theme_override_colors/font_color = Color(0.15, 0.1, 0.08, 1)
+theme_override_font_sizes/font_size = 20
 text = "Name"
 horizontal_alignment = 1
 
-[node name="CostLabel" type="Label" parent="."]
+[node name="CostLabel" type="Label" parent="." unique_id=1295647044]
+layout_mode = 0
 offset_left = 10.0
 offset_top = 140.0
 offset_right = 60.0
 offset_bottom = 164.0
-theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(0.15, 0.1, 0.08, 1)
+theme_override_font_sizes/font_size = 20
 text = "1"

@@ -1,7 +1,8 @@
 class_name Sim
 extends RefCounted
 ## Deterministic combat simulation. No nodes, no rendering, no scene tree.
-## Drive it with tick(orders) and replay the returned SimEvents in the view.
+## Drive it with tick() and replay the returned SimEvents in the view.
+## Player orders are instant free actions applied via apply_order().
 ##
 ## Interpretation choices (see docs/design.md):
 ## - Targets are chosen when an action FIRES, not when windup starts, so
@@ -16,6 +17,8 @@ extends RefCounted
 const LANES := 3
 const COLS := 12
 const SHIELD_REDUCTION := 5
+const KEEP_MAX_HP := 30
+const KEEP_LIVES := 3
 
 const SIDE_PLAYER := 0
 const SIDE_ENEMY := 1
@@ -24,6 +27,12 @@ var units: Array[SimUnit] = []
 var rng := RandomNumberGenerator.new()
 var tick_count := 0
 var winner := -1  # -1 = battle ongoing
+
+## Each side's keep sits on a virtual tile one past its board edge (player
+## col -1, enemy col COLS) in every lane. Exhausting its hp costs a life and
+## refills the bar; at 0 lives the other side wins. Indexed by side.
+var keep_hp: Array[int] = [KEEP_MAX_HP, KEEP_MAX_HP]
+var keep_lives: Array[int] = [KEEP_LIVES, KEEP_LIVES]
 
 var _next_id := 1
 
@@ -77,19 +86,17 @@ func forward(side: int) -> int:
 func apply_order(order) -> Array:
 	var events: Array = []
 	if winner == -1:
-		_apply_orders([order], events)
+		_apply_order(order, events)
 		_check_end(events)
 	return events
 
 
-func tick(orders: Array = []) -> Array:
+func tick() -> Array:
 	var events: Array = []
 	if winner != -1:
 		return events
 	tick_count += 1
 	events.append(SimEvent.make(&"tick_started", {"tick": tick_count}))
-
-	_apply_orders(orders, events)
 
 	for u in alive_units():
 		u.acted_this_tick = false
@@ -136,40 +143,39 @@ func tick(orders: Array = []) -> Array:
 	return events
 
 
-func _apply_orders(orders: Array, events: Array) -> void:
-	for o in orders:
-		var u := get_unit(o.unit_id)
-		if u == null or not u.is_alive():
-			continue
-		var ok := false
-		var fires := false
-		match o.type:
-			Order.DELAY:
-				if u.windup > 0:
-					u.windup += 1
-					ok = true
-			Order.HASTEN:
-				# Hastening a windup to 0 fires the action immediately.
-				if u.windup > 0:
-					u.windup -= 1
-					ok = true
-					if u.windup == 0:
-						u.windup = -1
-						fires = true
-			Order.ADVANCE:
-				ok = _order_move(u, u.lane, u.col + forward(u.side), events)
-			Order.RETREAT:
-				ok = _order_move(u, u.lane, u.col - forward(u.side), events)
-			Order.MOVE_UP:
-				ok = _order_move(u, u.lane - 1, u.col, events)
-			Order.MOVE_DOWN:
-				ok = _order_move(u, u.lane + 1, u.col, events)
-		var type := &"order_applied" if ok else &"order_rejected"
-		events.append(SimEvent.make(type, {"unit": u.id, "order": o.type}))
-		if ok and (o.type == Order.DELAY or o.type == Order.HASTEN):
-			events.append(SimEvent.make(&"windup_changed", {"unit": u.id, "windup": maxi(u.windup, 0)}))
-		if fires:
-			_fire_action(u, events)
+func _apply_order(o, events: Array) -> void:
+	var u := get_unit(o.unit_id)
+	if u == null or not u.is_alive():
+		return
+	var ok := false
+	var fires := false
+	match o.type:
+		Order.DELAY:
+			if u.windup > 0:
+				u.windup += 1
+				ok = true
+		Order.HASTEN:
+			# Hastening a windup to 0 fires the action immediately.
+			if u.windup > 0:
+				u.windup -= 1
+				ok = true
+				if u.windup == 0:
+					u.windup = -1
+					fires = true
+		Order.ADVANCE:
+			ok = _order_move(u, u.lane, u.col + forward(u.side), events)
+		Order.RETREAT:
+			ok = _order_move(u, u.lane, u.col - forward(u.side), events)
+		Order.MOVE_UP:
+			ok = _order_move(u, u.lane - 1, u.col, events)
+		Order.MOVE_DOWN:
+			ok = _order_move(u, u.lane + 1, u.col, events)
+	var type := &"order_applied" if ok else &"order_rejected"
+	events.append(SimEvent.make(type, {"unit": u.id, "order": o.type}))
+	if ok and (o.type == Order.DELAY or o.type == Order.HASTEN):
+		events.append(SimEvent.make(&"windup_changed", {"unit": u.id, "windup": maxi(u.windup, 0)}))
+	if fires:
+		_fire_action(u, events)
 
 
 ## Ordered moves swap with allies; enemy-occupied or off-grid cells reject.
@@ -227,7 +233,10 @@ func _fire_action(u: SimUnit, events: Array) -> void:
 func _do_strike(u: SimUnit, events: Array) -> void:
 	var target := _nearest_enemy_in_lane(u, 1)
 	if target == null:
-		events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"strike"}))
+		if _keep_dist(u) <= 1:
+			_damage_keep(u, events, true)
+		else:
+			events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"strike"}))
 		return
 	_deal_damage(u, target, u.creature.power, true, events)
 
@@ -235,7 +244,10 @@ func _do_strike(u: SimUnit, events: Array) -> void:
 func _do_shoot(u: SimUnit, events: Array) -> void:
 	var target := _nearest_enemy_in_lane(u, u.creature.attack_range)
 	if target == null:
-		events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"shoot"}))
+		if _keep_dist(u) <= u.creature.attack_range:
+			_damage_keep(u, events)
+		else:
+			events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"shoot"}))
 		return
 	_deal_damage(u, target, u.creature.power, false, events)
 
@@ -243,7 +255,11 @@ func _do_shoot(u: SimUnit, events: Array) -> void:
 func _do_blast(u: SimUnit, events: Array) -> void:
 	var target := _nearest_enemy_in_lane(u, u.creature.attack_range)
 	if target == null:
-		events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"blast"}))
+		# A blast on the keep is a clean hit — no splash off the virtual tile.
+		if _keep_dist(u) <= u.creature.attack_range:
+			_damage_keep(u, events)
+		else:
+			events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"blast"}))
 		return
 	var splash_targets: Array[SimUnit] = []
 	for v in alive_units():
@@ -264,12 +280,15 @@ func _do_line(u: SimUnit, events: Array) -> void:
 		var dist := (v.col - u.col) * dir
 		if dist >= 1 and dist <= u.creature.attack_range:
 			targets.append(v)
-	if targets.is_empty():
+	var hits_keep := _keep_dist(u) <= u.creature.attack_range
+	if targets.is_empty() and not hits_keep:
 		events.append(SimEvent.make(&"action_fizzled", {"unit": u.id, "action": &"line"}))
 		return
 	for v in targets:
 		if v.is_alive():
 			_deal_damage(u, v, u.creature.power, false, events)
+	if hits_keep:  # the line pierces through to the keep behind
+		_damage_keep(u, events)
 
 
 func _do_heal(u: SimUnit, events: Array) -> void:
@@ -293,6 +312,29 @@ func _heal_target(u: SimUnit) -> SimUnit:
 			best = v
 			best_key = key
 	return best
+
+
+## Distance to the enemy keep's virtual tile (one past the far board edge).
+## Enemy units are always nearer, so the keep is only ever a fallback target.
+func _keep_dist(u: SimUnit) -> int:
+	return (COLS - u.col) if u.side == SIDE_PLAYER else (u.col + 1)
+
+
+func _damage_keep(u: SimUnit, events: Array, is_melee := false) -> void:
+	var side := 1 - u.side
+	var amount := u.creature.power
+	keep_hp[side] = maxi(0, keep_hp[side] - amount)
+	events.append(SimEvent.make(&"keep_damaged", {
+		"attacker": u.id, "side": side, "amount": amount, "hp": keep_hp[side],
+		"melee": is_melee,
+	}))
+	if keep_hp[side] == 0:
+		keep_lives[side] -= 1
+		if keep_lives[side] > 0:
+			keep_hp[side] = KEEP_MAX_HP
+		events.append(SimEvent.make(&"keep_life_lost", {
+			"side": side, "lives": keep_lives[side], "hp": keep_hp[side],
+		}))
 
 
 func _nearest_enemy_in_lane(u: SimUnit, max_range: int) -> SimUnit:
@@ -378,7 +420,15 @@ func idle_intent(u: SimUnit) -> StringName:
 func _can_start_action(u: SimUnit) -> bool:
 	if u.creature.action == &"heal":
 		return _heal_target(u) != null
-	return _nearest_enemy_in_lane(u, _engage_range(u)) != null
+	if _nearest_enemy_in_lane(u, _engage_range(u)) != null:
+		return true
+	# Units at the wall siege the keep. Melee engages at actual reach (not the
+	# early defensive windup — the keep never closes the gap); riposte can't
+	# trigger off a keep, so those units just hold.
+	if u.creature.action == &"riposte":
+		return false
+	var reach := 1 if u.creature.action in [&"strike", &"skirmish", &"shield_strike"] else u.creature.attack_range
+	return _keep_dist(u) <= reach
 
 
 func _move_steps(u: SimUnit, dir: int, steps: int, events: Array) -> void:
@@ -400,7 +450,11 @@ func _check_end(events: Array) -> void:
 			player_alive += 1
 		else:
 			enemy_alive += 1
-	if enemy_alive == 0:
+	if keep_lives[SIDE_ENEMY] <= 0:
+		winner = SIDE_PLAYER
+	elif keep_lives[SIDE_PLAYER] <= 0:
+		winner = SIDE_ENEMY
+	elif enemy_alive == 0:
 		winner = SIDE_PLAYER if player_alive > 0 else SIDE_ENEMY
 	elif player_alive == 0:
 		winner = SIDE_ENEMY

@@ -42,6 +42,16 @@ attacks — they issue **orders** that reposition units and manipulate action ti
    range. Attack cadence is therefore exactly `delay`, and a unit in range
    is always winding up between ticks.
 
+## Keeps
+
+Each side has a keep sitting on a virtual tile one past its board edge (every
+lane) — player keep at col −1, enemy keep at col 12. Units that reach the wall
+with no enemy in range attack the keep instead (ranged units hit it from
+`range` tiles out; Line pierces through to it). Keeps have **30 HP and 3
+lives**: exhausting the bar costs a life and refills it; at 0 lives the other
+side wins. Keeps have no armour and never attack, so Riposte units hold at
+the wall instead of sieging.
+
 ## Player orders (6)
 
 Move in one of four directions, or adjust delay by 1:
@@ -53,7 +63,7 @@ Move in one of four directions, or adjust delay by 1:
 
 Rules / open ideas:
 
-- Orders are played as **cards** (draw 1/tick, hand limit 8, opening hand 4)
+- Orders are played as **cards** (draw 1/tick, hand limit 7, opening hand 4)
   and **resolve instantly** as free actions that don't advance the clock —
   including consequences: **hastening a windup to 0 fires the action
   immediately**. Delay/Hasten can target enemy units; movement is own-only.

@@ -9,8 +9,11 @@ const GRID_POS := Vector2(52, 180)
 
 const UNIT_VIEW_SCENE := preload("res://scenes/battle/unit_view.tscn")
 const CARD_SCENE := preload("res://scenes/ui/card.tscn")
+const CARD_BACK_TEXTURE := preload("res://assets/art/UI/card_back_red.png")
+const HEALTH_BOX_TEXTURE := preload("res://assets/art/UI/health-box.png")
+const CARD_SLOT_TEXTURE := preload("res://assets/art/UI/card_slot.png")
 
-const HAND_LIMIT := 8
+const HAND_LIMIT := 7
 const OPENING_HAND := 4
 
 ## Starting deck: order card type -> copies.
@@ -45,6 +48,17 @@ var _tooltip: PanelContainer
 var _tooltip_label: Label
 var _banner: Label
 var _restart_btn: Button
+var _draw_pile: TextureRect
+var _draw_count: Label
+var _discard_pile: CardController
+var _discard_count: Label
+
+# Keep displays, indexed by side. Shown values update from playback events
+# (not live sim state) so the bars move when the hit lands, like unit health.
+var _keep_fills: Array = [null, null]
+var _keep_lives_labels: Array = [null, null]
+var _shown_keep_hp: Array[int] = [Sim.KEEP_MAX_HP, Sim.KEEP_MAX_HP]
+var _shown_keep_lives: Array[int] = [Sim.KEEP_LIVES, Sim.KEEP_LIVES]
 var _fx_layer: Node2D
 var _overlay: Node2D  # grid + targeting highlights, above the background but below units
 
@@ -199,7 +213,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R:
 				if sim.winner != -1:
 					get_tree().reload_current_scene()
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7:
 				var idx: int = event.keycode - KEY_1
 				if idx < _hand_box.get_child_count():
 					_toggle_card(_hand_box.get_child(idx))
@@ -238,15 +252,94 @@ func _end_turn() -> void:
 
 func _update_status() -> void:
 	_tick_label.text = "Tick %d" % sim.tick_count
+	_refresh_piles()
 	if busy:
 		_status_label.text = "Resolving..."
 		return
-	var parts := ["Deck %d | Discard %d" % [deck.size(), discard.size()]]
 	if _selected_card != null:
-		parts.append("| Targeting: %s — click a unit, or the card to cancel" % _selected_card.name_label.text)
+		_status_label.text = "Targeting: %s — click a unit, or the card to cancel" % _selected_card.name_label.text
 	else:
-		parts.append("| Click a card (1-8), then a unit. Space ends the turn.")
-	_status_label.text = "  ".join(parts)
+		_status_label.text = "Click a card (1-7), then a unit. Space ends the turn."
+
+
+func _add_pile_slot(pos: Vector2, layer: CanvasLayer) -> void:
+	var slot := TextureRect.new()
+	slot.texture = CARD_SLOT_TEXTURE
+	slot.position = pos
+	slot.scale = Vector2(3, 3)
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(slot)
+
+
+func _refresh_piles() -> void:
+	_draw_count.text = str(deck.size())
+	_draw_pile.visible = deck.size() > 0
+	_discard_count.text = str(discard.size())
+	_discard_pile.visible = not discard.is_empty()
+	if not discard.is_empty():
+		_discard_pile.setup_order(discard.back())
+
+
+## Same pixel dressing as the unit bars: health-box nine-patch, 4px border,
+## fill inset 4px inside it.
+func _build_keep_bar(side: int, x: float, layer: CanvasLayer) -> void:
+	var bg := NinePatchRect.new()
+	bg.texture = HEALTH_BOX_TEXTURE
+	bg.region_rect = Rect2(0, 0, 32, 32)
+	bg.patch_margin_left = 4
+	bg.patch_margin_top = 4
+	bg.patch_margin_right = 4
+	bg.patch_margin_bottom = 4
+	bg.position = Vector2(x, GRID_POS.y)
+	bg.size = Vector2(16, Sim.LANES * CELL)
+	layer.add_child(bg)
+	var fill := ColorRect.new()
+	fill.color = UnitController.PLAYER_HP_COLOR if side == Sim.SIDE_PLAYER else UnitController.ENEMY_HP_COLOR
+	bg.add_child(fill)
+	_keep_fills[side] = fill
+	var lives := Label.new()
+	lives.position = Vector2(x - 16, GRID_POS.y + Sim.LANES * CELL + 4)
+	lives.size = Vector2(48, 24)
+	lives.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lives.add_theme_font_size_override("font_size", 20)
+	layer.add_child(lives)
+	_keep_lives_labels[side] = lives
+	_refresh_keep(side)
+
+
+## Bar drains top-down toward empty; lives shown as "xN" beneath it.
+func _refresh_keep(side: int) -> void:
+	var inner_h := Sim.LANES * CELL - 8.0
+	var frac := float(_shown_keep_hp[side]) / float(Sim.KEEP_MAX_HP)
+	var fill: ColorRect = _keep_fills[side]
+	fill.size = Vector2(8, inner_h * frac)
+	fill.position = Vector2(4, 4 + inner_h * (1.0 - frac))
+	_keep_lives_labels[side].text = "x%d" % _shown_keep_lives[side]
+
+
+## Knock the keep bar away from the blow and settle back. Playback awaits
+## longer than the shake, so tweens never overlap and home position holds.
+func _shake_keep(side: int, dir: float) -> void:
+	var bar: NinePatchRect = _keep_fills[side].get_parent()
+	var home := bar.position.x
+	var tw := create_tween()
+	tw.tween_property(bar, "position:x", home + dir * 6.0, 0.05)
+	tw.tween_property(bar, "position:x", home, 0.1)
+
+
+func _float_keep_text(side: int, text: String, color: Color) -> void:
+	var x := 8.0 if side == Sim.SIDE_PLAYER else 1180.0
+	_float_text_at(Vector2(x, GRID_POS.y + 110), text, color)
+
+
+func _pile_count_label(pos: Vector2, layer: CanvasLayer) -> Label:
+	var label := Label.new()
+	label.position = pos
+	label.size = Vector2(96, 24)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 20)
+	layer.add_child(label)
+	return label
 
 
 # --- UI construction ---
@@ -274,6 +367,29 @@ func _build_ui() -> void:
 	_hand_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hand_box.add_theme_constant_override("separation", 8)
 	layer.add_child(_hand_box)
+
+	# Keep health bars flank the grid, sitting on the castles at each edge.
+	_build_keep_bar(Sim.SIDE_PLAYER, 20, layer)
+	_build_keep_bar(Sim.SIDE_ENEMY, 1244, layer)
+
+	# Bottom-corner piles at 3/4 card size so a full hand doesn't cover them:
+	# discard (left) shows the last card played, draw (right) shows the deck.
+	# Empty slots sit underneath and show through when a pile runs out.
+	_add_pile_slot(Vector2(8, 580), layer)
+	_add_pile_slot(Vector2(1176, 580), layer)
+	_discard_pile = CARD_SCENE.instantiate()
+	_discard_pile.position = Vector2(8, 580)
+	_discard_pile.scale = Vector2(0.75, 0.75)
+	_discard_pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_discard_pile)
+	_discard_count = _pile_count_label(Vector2(8, 552), layer)
+	_draw_pile = TextureRect.new()
+	_draw_pile.texture = CARD_BACK_TEXTURE
+	_draw_pile.position = Vector2(1176, 580)
+	_draw_pile.scale = Vector2(3, 3)
+	_draw_pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_draw_pile)
+	_draw_count = _pile_count_label(Vector2(1176, 552), layer)
 
 	_end_turn_btn = Button.new()
 	_end_turn_btn.text = "End Turn (Space)"
@@ -327,9 +443,15 @@ func _play_events(events: Array) -> void:
 				var text := "-%d" % e.data.amount if e.data.amount > 0 else "Blocked"
 				_float_text(e.data.target, text, Color(1, 0.4, 0.4))
 				_hit_reaction(e.data)
+				var hv: UnitController = views.get(e.data.target)
+				if hv != null:
+					hv.apply_hp_delta(-e.data.amount)
 				await _wait(0.26)
 			&"healed":
 				_float_text(e.data.target, "+%d" % e.data.amount, Color(0.4, 1, 0.4))
+				var heal_v: UnitController = views.get(e.data.target)
+				if heal_v != null:
+					heal_v.apply_hp_delta(e.data.amount)
 				await _wait(0.22)
 			&"riposte_triggered":
 				_float_text(e.data.unit, "Riposte!", Color(1, 0.9, 0.3))
@@ -337,6 +459,25 @@ func _play_events(events: Array) -> void:
 			&"shield_up":
 				_float_text(e.data.unit, "Shield", Color(0.5, 0.7, 1))
 				await _wait(0.12)
+			&"keep_damaged":
+				# Melee attackers lunge into the castle; the bar only drops
+				# (and shakes) once the blow connects.
+				var toward_keep := 1.0 if e.data.side == Sim.SIDE_ENEMY else -1.0
+				var kav: UnitController = views.get(e.data.attacker)
+				if kav != null and e.data.melee:
+					kav.melee_attack(toward_keep)
+					await _wait(0.08)
+				_shown_keep_hp[e.data.side] = e.data.hp
+				_refresh_keep(e.data.side)
+				_shake_keep(e.data.side, toward_keep)
+				_float_keep_text(e.data.side, "-%d" % e.data.amount, Color(1, 0.4, 0.4))
+				await _wait(0.26)
+			&"keep_life_lost":
+				_shown_keep_hp[e.data.side] = e.data.hp
+				_shown_keep_lives[e.data.side] = e.data.lives
+				_refresh_keep(e.data.side)
+				_float_keep_text(e.data.side, "Keep falls!", Color(1, 0.8, 0.3))
+				await _wait(0.4)
 			&"unit_died":
 				var dv: UnitController = views.get(e.data.unit)
 				if dv != null:
@@ -392,10 +533,14 @@ func _float_text(unit_id: int, text: String, color: Color) -> void:
 	var v: UnitController = views.get(unit_id)
 	if v == null:
 		return
+	_float_text_at(v.position + Vector2(-16, -160), text, color)
+
+
+func _float_text_at(pos: Vector2, text: String, color: Color) -> void:
 	var label := Label.new()
 	label.text = text
 	label.modulate = color
-	label.position = v.position + Vector2(-16, -160)
+	label.position = pos
 	label.add_theme_font_size_override("font_size", 20)
 	_fx_layer.add_child(label)
 	var tw := create_tween()
@@ -452,12 +597,7 @@ func _update_tooltip() -> void:
 ## background; the root's own _draw would be covered by the TextureRect child.
 func _draw_overlay() -> void:
 	var line_color := Color(0, 0, 0, 0.15)
-	for lane in Sim.LANES + 1:
-		var y := GRID_POS.y + lane * CELL
-		_overlay.draw_line(Vector2(GRID_POS.x, y), Vector2(GRID_POS.x + Sim.COLS * CELL, y), line_color, 2.0)
-	for col in Sim.COLS + 1:
-		var x := GRID_POS.x + col * CELL
-		_overlay.draw_line(Vector2(x, GRID_POS.y), Vector2(x, GRID_POS.y + Sim.LANES * CELL), line_color, 2.0)
+	
 	# While targeting, outline every cell the selected card may target.
 	if _selected_card != null and not busy:
 		var any_target: bool = _selected_card.order_type in ANY_TARGET_CARDS
