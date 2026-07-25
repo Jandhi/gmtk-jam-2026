@@ -1,39 +1,52 @@
 extends Control
 ## Battle scene: turn loop, input, and event playback.
 ## All gameplay lives in Sim — this file only sends orders in and animates
-## the SimEvents that come back.
+## the SimEvents that come back. Orders are played from a hand of cards:
+## draw one per turn, click a card to enter targeting, click a unit to play it.
 
 const CELL := 96
 const GRID_POS := Vector2(52, 180)
-const ORDERS_PER_TURN := 2
 
 const UNIT_VIEW_SCENE := preload("res://scenes/battle/unit_view.tscn")
+const CARD_SCENE := preload("res://scenes/ui/card.tscn")
 
-const ORDER_DEFS := [
-	[Order.ADVANCE, "1 Advance"],
-	[Order.RETREAT, "2 Retreat"],
-	[Order.MOVE_UP, "3 Move Up"],
-	[Order.MOVE_DOWN, "4 Move Down"],
-	[Order.DELAY, "5 Delay +1"],
-	[Order.HASTEN, "6 Hasten -1"],
-]
+const HAND_LIMIT := 8
+const OPENING_HAND := 4
+
+## Starting deck: order card type -> copies.
+const STARTING_DECK := {
+	Order.ADVANCE: 5,
+	Order.RETREAT: 3,
+	Order.MOVE_UP: 3,
+	Order.MOVE_DOWN: 3,
+	Order.DELAY: 3,
+	Order.HASTEN: 3,
+}
+
+## Tempo cards may target any unit; movement cards only your own.
+const ANY_TARGET_CARDS: Array[StringName] = [Order.DELAY, Order.HASTEN]
 
 var sim: Sim
 var db: Dictionary
 var views := {}  # unit_id -> UnitController (unit_view.tscn)
-var selected_id := -1
-var queued: Array = []
 var busy := false
+
+var deck: Array[StringName] = []
+var discard: Array[StringName] = []
+
+var _selected_card: CardController = null
+var _hovered_id := -1
 
 var _status_label: Label
 var _tick_label: Label
 var _end_turn_btn: Button
+var _hand_box: HBoxContainer
 var _tooltip: PanelContainer
 var _tooltip_label: Label
 var _banner: Label
 var _restart_btn: Button
 var _fx_layer: Node2D
-var _overlay: Node2D  # grid + selection, above the background but below units
+var _overlay: Node2D  # grid + targeting highlights, above the background but below units
 
 
 func _ready() -> void:
@@ -46,6 +59,10 @@ func _ready() -> void:
 	_fx_layer = Node2D.new()
 	add_child(_fx_layer)
 	_build_ui()
+	_build_deck()
+	for i in OPENING_HAND:
+		_draw_card()
+	_refresh_views()
 	_update_status()
 	# Debug: `godot --path . -- --screenshot out.png` saves a frame and quits.
 	var args := OS.get_cmdline_user_args()
@@ -97,6 +114,144 @@ func cell_at(pos: Vector2) -> Vector2i:
 	return Vector2i(lane, col)
 
 
+# --- Cards ---
+
+
+func _build_deck() -> void:
+	deck.clear()
+	for type in STARTING_DECK:
+		for i in STARTING_DECK[type]:
+			deck.append(type)
+	deck.shuffle()
+
+
+func _draw_card() -> void:
+	if _hand_box.get_child_count() >= HAND_LIMIT:
+		return
+	if deck.is_empty():
+		deck = discard.duplicate()
+		discard.clear()
+		deck.shuffle()
+	if deck.is_empty():
+		return
+	var type: StringName = deck.pop_back()
+	var card: CardController = CARD_SCENE.instantiate()
+	_hand_box.add_child(card)
+	card.setup_order(type)
+	card.gui_input.connect(_on_card_gui_input.bind(card))
+
+
+func _on_card_gui_input(event: InputEvent, card: CardController) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_toggle_card(card)
+
+
+func _toggle_card(card: CardController) -> void:
+	if busy or sim.winner != -1:
+		return
+	if _selected_card == card:
+		card.set_selected(false)
+		_selected_card = null
+	else:
+		if _selected_card != null:
+			_selected_card.set_selected(false)
+		_selected_card = card
+		card.set_selected(true)
+	_update_status()
+
+
+## Orders resolve instantly (a free action that doesn't advance the clock).
+## Rejected orders (blocked cell, idle unit for tempo cards) keep the card.
+func _play_card(card: CardController, unit: SimUnit) -> void:
+	var events := sim.apply_order(Order.make(unit.id, card.order_type))
+	var applied := false
+	for e in events:
+		if e.type == &"order_applied":
+			applied = true
+	if not applied:
+		_float_text(unit.id, "Can't", Color(1, 0.5, 0.4))
+		return
+	discard.append(card.order_type)
+	_float_text(unit.id, card.name_label.text, Color(1, 0.9, 0.3))
+	_selected_card = null
+	card.queue_free()
+	busy = true
+	_update_status()
+	await _play_events(events)
+	busy = false
+	_update_status()
+
+
+# --- Input & turn loop ---
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_click(event.position)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			if _selected_card != null:
+				_toggle_card(_selected_card)
+	elif event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_SPACE:
+				_end_turn()
+			KEY_R:
+				if sim.winner != -1:
+					get_tree().reload_current_scene()
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
+				var idx: int = event.keycode - KEY_1
+				if idx < _hand_box.get_child_count():
+					_toggle_card(_hand_box.get_child(idx))
+
+
+func _click(pos: Vector2) -> void:
+	if busy or _selected_card == null:
+		return
+	var cell := cell_at(pos)
+	if cell.x == -1:
+		return
+	var u := sim.unit_at(cell.x, cell.y)
+	if u == null:
+		return
+	var own_only: bool = not (_selected_card.order_type in ANY_TARGET_CARDS)
+	if own_only and u.side != Sim.SIDE_PLAYER:
+		_float_text(u.id, "Your units only", Color(1, 0.6, 0.4))
+		return
+	_play_card(_selected_card, u)
+
+
+func _end_turn() -> void:
+	if busy or sim.winner != -1:
+		return
+	if _selected_card != null:
+		_selected_card.set_selected(false)
+		_selected_card = null
+	busy = true
+	var events := sim.tick()
+	_update_status()
+	await _play_events(events)
+	busy = false
+	_draw_card()
+	_update_status()
+
+
+func _update_status() -> void:
+	_tick_label.text = "Tick %d" % sim.tick_count
+	if busy:
+		_status_label.text = "Resolving..."
+		return
+	var parts := ["Deck %d | Discard %d" % [deck.size(), discard.size()]]
+	if _selected_card != null:
+		parts.append("| Targeting: %s — click a unit, or the card to cancel" % _selected_card.name_label.text)
+	else:
+		parts.append("| Click a card (1-8), then a unit. Space ends the turn.")
+	_status_label.text = "  ".join(parts)
+
+
+# --- UI construction ---
+
+
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
@@ -112,23 +267,21 @@ func _build_ui() -> void:
 	_status_label.modulate = Color(0.85, 0.85, 0.85)
 	layer.add_child(_status_label)
 
-	var bar := HBoxContainer.new()
-	bar.position = Vector2(52, 630)
-	bar.add_theme_constant_override("separation", 10)
-	layer.add_child(bar)
-	for def in ORDER_DEFS:
-		var btn := Button.new()
-		btn.text = def[1]
-		btn.add_theme_font_size_override("font_size", 20)
-		btn.custom_minimum_size = Vector2(130, 44)
-		btn.pressed.connect(_queue_order.bind(def[0]))
-		bar.add_child(btn)
+	_hand_box = HBoxContainer.new()
+	_hand_box.position = Vector2(0, 536)
+	_hand_box.size = Vector2(1280, 176)
+	_hand_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_hand_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hand_box.add_theme_constant_override("separation", 8)
+	layer.add_child(_hand_box)
+
 	_end_turn_btn = Button.new()
 	_end_turn_btn.text = "End Turn (Space)"
 	_end_turn_btn.add_theme_font_size_override("font_size", 20)
-	_end_turn_btn.custom_minimum_size = Vector2(180, 44)
+	_end_turn_btn.position = Vector2(1040, 24)
+	_end_turn_btn.custom_minimum_size = Vector2(190, 44)
 	_end_turn_btn.pressed.connect(_end_turn)
-	bar.add_child(_end_turn_btn)
+	layer.add_child(_end_turn_btn)
 
 	_tooltip = PanelContainer.new()
 	_tooltip_label = Label.new()
@@ -155,75 +308,7 @@ func _build_ui() -> void:
 	layer.add_child(_restart_btn)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			_click(event.position)
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			queued.clear()
-			_update_status()
-	elif event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
-			KEY_SPACE:
-				_end_turn()
-			KEY_R:
-				if sim.winner != -1:
-					get_tree().reload_current_scene()
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6:
-				var idx: int = event.keycode - KEY_1
-				_queue_order(ORDER_DEFS[idx][0])
-
-
-func _click(pos: Vector2) -> void:
-	if busy:
-		return
-	var cell := cell_at(pos)
-	selected_id = -1
-	if cell.x != -1:
-		var u := sim.unit_at(cell.x, cell.y)
-		if u != null and u.side == Sim.SIDE_PLAYER:
-			selected_id = u.id
-	queue_redraw()
-	_update_status()
-
-
-func _queue_order(type: StringName) -> void:
-	if busy or sim.winner != -1 or selected_id == -1:
-		return
-	if queued.size() >= ORDERS_PER_TURN:
-		return
-	queued.append(Order.make(selected_id, type))
-	_update_status()
-
-
-func _end_turn() -> void:
-	if busy or sim.winner != -1:
-		return
-	busy = true
-	selected_id = -1
-	queue_redraw()
-	var events := sim.tick(queued)
-	queued.clear()
-	_update_status()
-	await _play_events(events)
-	busy = false
-	_update_status()
-
-
-func _update_status() -> void:
-	_tick_label.text = "Tick %d" % sim.tick_count
-	if busy:
-		_status_label.text = "Resolving..."
-		return
-	var parts := ["Orders: %d/%d queued" % [queued.size(), ORDERS_PER_TURN]]
-	for o in queued:
-		var u := sim.get_unit(o.unit_id)
-		parts.append("%s->%s" % [u.creature.name, o.type])
-	if selected_id != -1:
-		parts.append("| Selected: %s" % sim.get_unit(selected_id).creature.name)
-	else:
-		parts.append("| Click one of your units, then an order. Right-click clears orders.")
-	_status_label.text = "  ".join(parts)
+# --- Event playback ---
 
 
 func _play_events(events: Array) -> void:
@@ -277,7 +362,7 @@ func _refresh_views() -> void:
 	for u in sim.alive_units():
 		var v: UnitController = views.get(u.id)
 		if v != null:
-			v.refresh(u)
+			v.refresh(u, u.windup <= 0 and sim.idle_intent(u) == &"move")
 
 
 func _punch(unit_id: int) -> void:
@@ -320,18 +405,35 @@ func _float_text(unit_id: int, text: String, color: Color) -> void:
 	tw.chain().tween_callback(label.queue_free)
 
 
+# --- Hover, tooltip, overlay ---
+
+
 func _process(_delta: float) -> void:
 	_overlay.queue_redraw()
 	_update_tooltip()
 
 
+func _set_hovered(unit_id: int) -> void:
+	if unit_id == _hovered_id:
+		return
+	var old: UnitController = views.get(_hovered_id)
+	if old != null:
+		old.set_hovered(false)
+	var new_view: UnitController = views.get(unit_id)
+	if new_view != null:
+		new_view.set_hovered(true)
+	_hovered_id = unit_id
+
+
 func _update_tooltip() -> void:
 	if busy:
 		_tooltip.visible = false
+		_set_hovered(-1)
 		return
 	var mouse := get_viewport().get_mouse_position()
 	var cell := cell_at(mouse)
 	var u := sim.unit_at(cell.x, cell.y) if cell.x != -1 else null
+	_set_hovered(u.id if u != null else -1)
 	if u == null:
 		_tooltip.visible = false
 		return
@@ -356,8 +458,10 @@ func _draw_overlay() -> void:
 	for col in Sim.COLS + 1:
 		var x := GRID_POS.x + col * CELL
 		_overlay.draw_line(Vector2(x, GRID_POS.y), Vector2(x, GRID_POS.y + Sim.LANES * CELL), line_color, 2.0)
-	if selected_id != -1:
-		var u := sim.get_unit(selected_id)
-		if u != null and u.is_alive():
-			var top_left := GRID_POS + Vector2(u.col * CELL, u.lane * CELL)
-			_overlay.draw_rect(Rect2(top_left, Vector2(CELL, CELL)), Color(1, 0.9, 0.2), false, 3.0)
+	# While targeting, outline every cell the selected card may target.
+	if _selected_card != null and not busy:
+		var any_target: bool = _selected_card.order_type in ANY_TARGET_CARDS
+		for u in sim.alive_units():
+			if any_target or u.side == Sim.SIDE_PLAYER:
+				var top_left := GRID_POS + Vector2(u.col * CELL, u.lane * CELL)
+				_overlay.draw_rect(Rect2(top_left, Vector2(CELL, CELL)), Color(1, 0.9, 0.2, 0.8), false, 3.0)

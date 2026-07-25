@@ -37,8 +37,10 @@ attacks — they issue **orders** that reposition units and manipulate action ti
 1. In initiative order (rolling ties), each unit ticks 1 step towards its action.
 2. A unit reaching 0 resolves its action. Defensive actions (Riposte, Shield
    Strike) have portions that trigger before anyone else so they defend properly.
-3. After all ticks resolve: any unit that hasn't acted and isn't mid-windup
-   either starts a new action or moves one space to get into range.
+3. After all ticks resolve: every unit not mid-windup — including one that
+   just fired — either starts a new action or moves one space to get into
+   range. Attack cadence is therefore exactly `delay`, and a unit in range
+   is always winding up between ticks.
 
 ## Player orders (6)
 
@@ -51,6 +53,11 @@ Move in one of four directions, or adjust delay by 1:
 
 Rules / open ideas:
 
+- Orders are played as **cards** (draw 1/tick, hand limit 8, opening hand 4)
+  and **resolve instantly** as free actions that don't advance the clock —
+  including consequences: **hastening a windup to 0 fires the action
+  immediately**. Delay/Hasten can target enemy units; movement is own-only.
+- Rejected orders (blocked cell, idle unit) don't consume the card.
 - Ordering a unit into an ally-occupied space **swaps** the two units.
 - Input: either select unit → click order, or drag order onto unit (undecided).
 - Order economy: maybe orders have a cooldown, or only refresh if you skip a

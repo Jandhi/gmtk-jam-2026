@@ -4,9 +4,16 @@
 [ext_resource type="Texture2D" uid="uid://cmijfqm3m3qft" path="res://assets/art/Monsters/Goblin.PNG" id="2_7d4hf"]
 [ext_resource type="Texture2D" uid="uid://dkbi6a55pr7ol" path="res://assets/art/UI/health-box.png" id="3_l4s12"]
 [ext_resource type="Texture2D" uid="uid://b01ky7uxqo3re" path="res://assets/art/UI/shield-icon.png" id="3_y0tni"]
+[ext_resource type="Texture2D" uid="uid://t65gh88tjty1" path="res://assets/art/UI/selection-circle-sheet.png" id="4_selcirc"]
 
 [node name="UnitView" type="Node2D" unique_id=1859183451]
 script = ExtResource("1")
+
+[node name="HoverCircle" type="Sprite2D" parent="." unique_id=1345744678]
+position = Vector2(0, 11)
+scale = Vector2(4, 4)
+texture = ExtResource("4_selcirc")
+hframes = 4
 
 [node name="SpriteAnchor" type="Node2D" parent="." unique_id=83116730]
 position = Vector2(0, 56)
@@ -35,6 +42,14 @@ offset_top = 4.0
 offset_right = 60.0
 offset_bottom = 8.0
 color = Color(0.4, 0.9, 0.35, 1)
+
+[node name="ShieldBarFill" type="ColorRect" parent="HealthBarBG" unique_id=2116421621]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 60.0
+offset_bottom = 8.0
+color = Color(0.35, 0.6, 1, 1)
 
 [node name="DelayLabel" type="Label" parent="." unique_id=1517095839]
 offset_left = -33.0

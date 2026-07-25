@@ -18,6 +18,8 @@ func _init() -> void:
 	_test_delay_and_hasten_orders()
 	_test_line_hits_multiple()
 	_test_heal()
+	_test_no_rest_after_firing()
+	_test_hasten_fires_instantly()
 	_test_riposte_counters()
 
 	if failures == 0:
@@ -165,6 +167,33 @@ func _test_heal() -> void:
 		check(heals[0].data.target == knight.id, "healed the damaged knight")
 		check(knight.hp == 5 + db["Priest"].power, "heal amount = power")
 	check(priest.col == 1, "priest held position instead of marching")
+
+
+func _test_no_rest_after_firing() -> void:
+	print("no_rest_after_firing:")
+	var sim := Sim.new(5)
+	var g := sim.spawn(db["Goblin"], Sim.SIDE_PLAYER, 0, 4)  # delay 2
+	sim.spawn(db["Ogre"], Sim.SIDE_ENEMY, 0, 5)
+	sim.tick()  # goblin starts windup 2
+	sim.tick()  # windup 1
+	var events := sim.tick()  # fires, then restarts windup in the same end phase
+	check(not events_of(events, &"action_fired").is_empty(), "goblin fired on tick 3")
+	check(g.windup == g.creature.delay, "windup restarted same tick (cadence = delay)")
+
+
+func _test_hasten_fires_instantly() -> void:
+	print("hasten_fires_instantly:")
+	var sim := Sim.new(5)
+	var g := sim.spawn(db["Goblin"], Sim.SIDE_PLAYER, 0, 4)
+	var o := sim.spawn(db["Ogre"], Sim.SIDE_ENEMY, 0, 5)
+	sim.tick()  # both start winding up
+	sim.tick()  # goblin windup 2 -> 1
+	check(g.windup == 1, "goblin at windup 1")
+	var events := sim.apply_order(Order.make(g.id, Order.HASTEN))
+	check(not events_of(events, &"action_fired").is_empty(), "hasten to 0 fired the strike")
+	var hits := events_of(events, &"damage_dealt")
+	check(not hits.is_empty() and hits[0].data.target == o.id, "instant strike hit the ogre")
+	check(g.windup == -1, "goblin idle after instant fire")
 
 
 func _test_riposte_counters() -> void:

@@ -71,6 +71,17 @@ func forward(side: int) -> int:
 	return 1 if side == SIDE_PLAYER else -1
 
 
+## Apply one player order immediately, outside the tick ("free action" — does
+## not advance the clock). Returns the events it produced; contains
+## order_rejected instead of order_applied if the order was invalid.
+func apply_order(order) -> Array:
+	var events: Array = []
+	if winner == -1:
+		_apply_orders([order], events)
+		_check_end(events)
+	return events
+
+
 func tick(orders: Array = []) -> Array:
 	var events: Array = []
 	if winner != -1:
@@ -112,9 +123,11 @@ func tick(orders: Array = []) -> Array:
 			events.append(SimEvent.make(&"shield_counter", {"unit": u.id}))
 			_do_strike(u, events)
 
-	# End phase: idle units start a new action or move into range.
+	# End phase: every idle unit starts a new action or moves into range —
+	# including units that fired this tick, so cadence is exactly `delay`
+	# and a unit in range is always winding up between ticks.
 	for u in _initiative_order(alive_units()):
-		if u.acted_this_tick or u.windup > 0:
+		if u.windup > 0:
 			continue
 		_choose_or_move(u, events)
 
@@ -129,15 +142,20 @@ func _apply_orders(orders: Array, events: Array) -> void:
 		if u == null or not u.is_alive():
 			continue
 		var ok := false
+		var fires := false
 		match o.type:
 			Order.DELAY:
 				if u.windup > 0:
 					u.windup += 1
 					ok = true
 			Order.HASTEN:
-				if u.windup > 1:
+				# Hastening a windup to 0 fires the action immediately.
+				if u.windup > 0:
 					u.windup -= 1
 					ok = true
+					if u.windup == 0:
+						u.windup = -1
+						fires = true
 			Order.ADVANCE:
 				ok = _order_move(u, u.lane, u.col + forward(u.side), events)
 			Order.RETREAT:
@@ -149,7 +167,9 @@ func _apply_orders(orders: Array, events: Array) -> void:
 		var type := &"order_applied" if ok else &"order_rejected"
 		events.append(SimEvent.make(type, {"unit": u.id, "order": o.type}))
 		if ok and (o.type == Order.DELAY or o.type == Order.HASTEN):
-			events.append(SimEvent.make(&"windup_changed", {"unit": u.id, "windup": u.windup}))
+			events.append(SimEvent.make(&"windup_changed", {"unit": u.id, "windup": maxi(u.windup, 0)}))
+		if fires:
+			_fire_action(u, events)
 
 
 ## Ordered moves swap with allies; enemy-occupied or off-grid cells reject.
@@ -339,6 +359,20 @@ func _engage_range(u: SimUnit) -> int:
 			return 1 + u.creature.delay
 		_:
 			return u.creature.attack_range
+
+
+## What an idle unit will do in the end phase — view helper, read-only.
+## &"act": starts its action; &"move": marches forward; &"hold": stays put
+## (healers out of work, or march blocked by a unit / the board edge).
+func idle_intent(u: SimUnit) -> StringName:
+	if _can_start_action(u):
+		return &"act"
+	if u.creature.action == &"heal":
+		return &"hold"
+	var next_col := u.col + forward(u.side)
+	if next_col < 0 or next_col >= COLS or unit_at(u.lane, next_col) != null:
+		return &"hold"
+	return &"move"
 
 
 func _can_start_action(u: SimUnit) -> bool:
