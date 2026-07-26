@@ -217,7 +217,7 @@ const ACTION_BLURBS := {
 	&"shield_strike": "Raises a shield the tick before it swings, blocking %d damage. Strikes only if nothing hit it.",
 	&"skirmish": "Hits the unit in front, then darts two tiles back out of reach.",
 	&"shoot": "Fires down its lane at the nearest enemy within %d tiles.",
-	&"blast": "Detonates on the nearest enemy in range — and everything next to them, allies included.",
+	&"blast": "Detonates on the nearest enemy in range - and everything next to them, allies included.",
 	&"line": "Sends a shot down the whole lane, hitting every enemy within %d tiles.",
 	&"riposte": "Holds its guard. Negates the next melee hit that lands and strikes straight back.",
 	&"heal": "Restores health to the most wounded ally beside it instead of attacking.",
@@ -227,12 +227,12 @@ const ACTION_BLURBS := {
 ## Traits worth a line in the tooltip. Ones the sim doesn't read yet are
 ## deliberately absent — better silent than promising something that won't happen.
 const ABILITY_BLURBS := {
-	&"fast": "Fast — covers two tiles per march.",
-	&"slow": "Slow — only marches every other tick.",
+	&"fast": "Fast - covers two tiles per march.",
+	&"slow": "Slow - only marches every other tick.",
 	&"ignores_armour": "Ignores armour entirely.",
-	&"poison": "Poison — its wounds keep bleeding after the hit.",
-	&"lifesteal": "Lifesteal — heals itself for the damage it deals.",
-	&"missile_resist": "Missile Resist — shrugs off arrows and other shots.",
+	&"poison": "Poison - its wounds keep bleeding after the hit.",
+	&"lifesteal": "Lifesteal - heals itself for the damage it deals.",
+	&"missile_resist": "Missile Resist - shrugs off arrows and other shots.",
 	&"heals_allies_on_attack": "Mends nearby allies every time it attacks.",
 	&"summons_skeletons": "Raises skeletons to fight alongside it.",
 }
@@ -260,7 +260,7 @@ const ANY_TARGET_CARDS: Array[StringName] = [Order.DELAY, Order.HASTEN]
 
 # The shop drops in every SHOP_INTERVAL ticks; bought cards join the discard.
 # Gold trickles in per tick and spikes on kills.
-const SHOP_INTERVAL := 20
+const SHOP_INTERVAL := 16
 const SHOP_STOCK := 3
 const GOLD_PER_TICK := 1
 const GOLD_PER_KILL := 3
@@ -401,7 +401,7 @@ func _ready() -> void:
 			_close_menu()
 			await _wait(MENU_PAN_TIME + 0.1)
 			_show_tip(&"gold", "Gold",
-				"That kill paid %d gold. Ending a turn pays %d more, so gold comes in faster the harder you fight.\n\nSpend it when the shop rolls in — on fresh orders, or on units to field from your own back ranks." % [GOLD_PER_KILL, GOLD_PER_TICK])
+				"That kill paid %d gold. Ending a turn pays %d more, so gold comes in faster the harder you fight.\n\nSpend it when the shop rolls in - on fresh orders, or on units to field from your own back ranks." % [GOLD_PER_KILL, GOLD_PER_TICK])
 			await _wait(0.4)
 		if args.has("--sel"):
 			# Select the first hand card so the discard prompt is on screen.
@@ -885,9 +885,9 @@ func _update_status() -> void:
 		return
 	if _selected_card != null:
 		if Order.is_unit_card(_selected_card.order_type):
-			_status_label.text = "Deploying: %s — click a highlighted back-rank cell, or the card to cancel" % _selected_card.name_label.text
+			_status_label.text = "Deploying: %s - click a highlighted back-rank cell, or the card to cancel" % _selected_card.name_label.text
 		else:
-			_status_label.text = "Targeting: %s — click a unit, or the card to cancel" % _selected_card.name_label.text
+			_status_label.text = "Targeting: %s - click a unit, or the card to cancel" % _selected_card.name_label.text
 	else:
 		_status_label.text = "Click a card (1-7), then a unit. Space ends the turn."
 
@@ -1170,7 +1170,7 @@ func _build_tip_panel() -> void:
 	col.add_child(_tip_body)
 
 	_tip_close = Button.new()
-	_tip_close.text = "Got it  ✕"
+	_tip_close.text = "Got it  X"
 	_tip_close.add_theme_font_size_override("font_size", 22)
 	_tip_close.add_theme_color_override("font_color", Color("f4e7d3"))
 	_tip_close.add_theme_stylebox_override("normal", _menu_button_style(Color("45283c")))
@@ -1331,7 +1331,9 @@ func _build_ui() -> void:
 	hint_box.set_content_margin_all(8)
 	_discard_hint.add_theme_stylebox_override("panel", hint_box)
 	_discard_hint.position = Vector2(8, 496)
-	_discard_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Clickable too: the prompt is the bigger, more obvious target of the two.
+	_discard_hint.mouse_filter = Control.MOUSE_FILTER_STOP
+	_discard_hint.gui_input.connect(_on_discard_pile_input)
 	_discard_hint.visible = false
 	var hint_label := Label.new()
 	hint_label.text = "Click to discard"
@@ -1581,13 +1583,14 @@ func _play_events(events: Array) -> void:
 				# Explain the raze the first time it happens: the armies are
 				# about to vanish and nothing else in the game says why.
 				await _show_tip(&"raze", "The keep falls",
-					"Breaking a keep costs the attacker everything. The army that broke it is razed where it stands — yours or theirs.\n\nEach keep has three lives. Take all three to win, but you will have to rebuild in between.")
+					"Breaking a keep costs the attacker everything. The army that broke it is razed where it stands - yours or theirs.\n\nEach keep has three lives. Take all three to win, but you will have to rebuild in between.")
 			&"unit_died":
 				var dv: UnitController = views.get(e.data.unit)
 				_sfx_unit(&"unit_death", e.data.unit)
 				# A deployed unit was holding its card; dying releases it into
 				# the discard, so losing reinforcements cycles them back in.
-				if _deployed_cards.has(e.data.unit):
+				var freed_card := _deployed_cards.has(e.data.unit)
+				if freed_card:
 					discard.append(_deployed_cards[e.data.unit])
 					_deployed_cards.erase(e.data.unit)
 				if sim.get_unit(e.data.unit).side == Sim.SIDE_ENEMY:
@@ -1598,7 +1601,12 @@ func _play_events(events: Array) -> void:
 					# First kill: the +Ng that just floated up needs explaining,
 					# and so does the trickle they've been earning all along.
 					await _show_tip(&"gold", "Gold",
-						"That kill paid %d gold. Ending a turn pays %d more, so gold comes in faster the harder you fight.\n\nSpend it when the shop rolls in — on fresh orders, or on units to field from your own back ranks." % [GOLD_PER_KILL, GOLD_PER_TICK])
+						"That kill paid %d gold. Ending a turn pays %d more, so gold comes in faster the harder you fight.\n\nSpend it when the shop rolls in - on fresh orders, or on units to field from your own back ranks." % [GOLD_PER_KILL, GOLD_PER_TICK])
+				elif freed_card:
+					# Losing a unit you deployed: its card comes back, which is
+					# the only thing that ever refills the deck with units.
+					await _show_tip(&"card_returns", "The card comes back",
+						"A unit you field holds its card for as long as it lives. Now that it has fallen, that card returns to your discard pile.\n\nUnits are never truly spent - they cycle back into your deck when they die, ready to be fielded again.")
 				if dv != null:
 					views.erase(e.data.unit)
 					# Razed by a keep breach: go up in smoke rather than fading
@@ -1810,7 +1818,7 @@ func _unit_card_at(pos: Vector2) -> CardController:
 ## Fill the tooltip for a creature. `hp`/`windup` come from a unit on the
 ## board; pass -1 for a card, which has no live state to show yet.
 func _fill_tooltip(c: CreatureData, hp: int, windup: int) -> void:
-	_tooltip_name.text = "%s — %s" % [c.name, ACTION_NAMES.get(c.action, String(c.action))]
+	_tooltip_name.text = "%s - %s" % [c.name, ACTION_NAMES.get(c.action, String(c.action))]
 	# Blurbs take at most one number: the cadence for a plain strike, the
 	# block for a shield, the reach for anything that fires down a lane.
 	var blurb: String = ACTION_BLURBS.get(c.action, "")

@@ -154,9 +154,11 @@ func _test_swap_order() -> void:
 func _test_delay_and_hasten_orders() -> void:
 	print("delay_hasten:")
 	var sim := Sim.new(1)
+	# Adjacent: shield strike engages at melee reach now, so a guard two tiles
+	# out would spend the first tick marching instead of winding up.
 	var g := sim.spawn(db["Guard"], Sim.SIDE_PLAYER, 0, 5)
-	sim.spawn(db["Ogre Zombie"], Sim.SIDE_ENEMY, 0, 7)
-	sim.tick()  # guard sees the ogre within 1+delay and starts winding up
+	sim.spawn(db["Ogre Zombie"], Sim.SIDE_ENEMY, 0, 6)
+	sim.tick()  # guard is in reach, so it starts winding up
 	check(g.windup == db["Guard"].delay, "guard started windup")
 	var before := g.windup
 	sim.apply_order(Order.make(g.id, Order.DELAY))

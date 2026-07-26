@@ -38,4 +38,8 @@ Design details and rules interpretations: `docs/design.md`.
 - GDScript: tabs, snake_case file/function names, PascalCase node/class names, typed where easy (`:=`).
 - Prefer scene composition over deep inheritance; keep scripts on scene roots.
 - Web constraints: no threads (export preset is non-threaded), audio must start after a user input, avoid `OS.execute`/file dialogs.
+- **On-screen text is ASCII only.** `Fabled_Font.ttf` has no glyphs for em/en
+  dashes, curly quotes, `×`, `…` or similar — they render as blanks on web,
+  where there's no system font to fall back on. Use `-`, `'`, `x`, `...`.
+  Comments can use whatever; they never render.
 - Jam mindset: simple > clever, cut scope early, keep the game playable at all times.

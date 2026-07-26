@@ -743,12 +743,17 @@ func _choose_or_move(u: SimUnit, events: Array) -> void:
 
 ## Defensive melee units wind up when an enemy is close enough to arrive as
 ## they arm (1 + delay), so a well-timed windup meets the attacker head-on.
+## How far out a unit will commit to its action instead of marching. Melee
+## closes to reach first; everything else engages at its stated range.
+##
+## Shield Strike and Riposte used to engage at 1 + delay so their defensive
+## windup was already up when the enemy arrived. It read as cowardice — they
+## halted in open field and raised a guard at nothing while the enemy was
+## still tiles off. Walking up to your foe first looks like a soldier.
 func _engage_range(u: SimUnit) -> int:
 	match u.creature.action:
-		&"strike", &"skirmish":
+		&"strike", &"skirmish", &"shield_strike", &"riposte":
 			return 1
-		&"shield_strike", &"riposte":
-			return 1 + u.creature.delay
 		_:
 			return u.creature.attack_range
 
