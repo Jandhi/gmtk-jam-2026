@@ -331,6 +331,8 @@ var _draw_pile: TextureRect
 var _draw_count: Label
 var _discard_pile: CardController
 var _discard_count: Label
+var _discard_drop: Control      # click target over the discard pile
+var _discard_hint: PanelContainer  # "Click to discard", only while a card is up
 
 # Keep displays, indexed by side. Shown values update from playback events
 # (not live sim state) so the bars move when the hit lands, like unit health.
@@ -401,12 +403,19 @@ func _ready() -> void:
 			_show_tip(&"gold", "Gold",
 				"That kill paid %d gold. Ending a turn pays %d more, so gold comes in faster the harder you fight.\n\nSpend it when the shop rolls in — on fresh orders, or on units to field from your own back ranks." % [GOLD_PER_KILL, GOLD_PER_TICK])
 			await _wait(0.4)
+		if args.has("--sel"):
+			# Select the first hand card so the discard prompt is on screen.
+			var hand := _hand_cards()
+			if not hand.is_empty():
+				_toggle_card(hand[0])
+			await _wait(0.2)
 		if args.has("--tip"):
 			# The title card covers everything, so pan it away first, then park
 			# the cursor on a shop card to capture its tooltip.
 			_close_menu()
 			await _wait(MENU_PAN_TIME + 0.2)
-			var c := _shop_cards_box.get_child(0) as Control
+			var idx := int(args[args.find("--tip") + 1]) if args.size() > args.find("--tip") + 1 and args[args.find("--tip") + 1].is_valid_int() else 0
+			var c := _shop_cards_box.get_child(idx) as Control
 			Input.warp_mouse(c.get_global_rect().get_center())
 			await _wait(0.2)
 		if args.has("--pan"):
@@ -869,6 +878,8 @@ func _update_status() -> void:
 	var until_wave: int = maxi(sim.next_wave_tick() - sim.tick_count, 0)
 	_tick_label.text = "Tick %d    Gold %d    Wave in %d" % [sim.tick_count, gold, until_wave]
 	_refresh_piles()
+	if _discard_hint != null:
+		_discard_hint.visible = _selected_card != null and not busy and not _shop_open
 	if busy:
 		_status_label.text = "Resolving..."
 		return
@@ -879,6 +890,25 @@ func _update_status() -> void:
 			_status_label.text = "Targeting: %s — click a unit, or the card to cancel" % _selected_card.name_label.text
 	else:
 		_status_label.text = "Click a card (1-7), then a unit. Space ends the turn."
+
+
+func _on_discard_pile_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_discard_selected()
+
+
+## Bin the selected card. Free, but it costs you the card — the point is to
+## clear a hand clogged with orders you can't use, not to filter for free.
+func _discard_selected() -> void:
+	if busy or _shop_open or _menu_open() or _selected_card == null:
+		return
+	var card := _selected_card
+	_selected_card = null
+	discard.append(card.order_type)
+	_sfx(&"card_select")
+	_discard_card_view(card, true)
+	_layout_hand()
+	_update_status()
 
 
 func _add_pile_slot(pos: Vector2, layer: CanvasLayer) -> void:
@@ -1283,6 +1313,32 @@ func _build_ui() -> void:
 	_discard_pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_discard_pile)
 	_discard_count = _pile_count_label(Vector2(8, 552), layer)
+	# Click target over the discard pile. With a card selected, clicking here
+	# throws it away — a way out of a hand full of orders you can't use.
+	_discard_drop = Control.new()
+	_discard_drop.position = DISCARD_PILE_POS
+	_discard_drop.size = Vector2(HAND_CARD_W, 176) * PILE_CARD_SCALE
+	_discard_drop.mouse_filter = Control.MOUSE_FILTER_STOP
+	_discard_drop.gui_input.connect(_on_discard_pile_input)
+	layer.add_child(_discard_drop)
+	# Prompt above the pile, shown only while something is selected.
+	_discard_hint = PanelContainer.new()
+	var hint_box := StyleBoxFlat.new()
+	hint_box.bg_color = Color("222034ee")
+	hint_box.border_color = TITLE_COLOR
+	hint_box.set_border_width_all(3)
+	hint_box.set_corner_radius_all(0)
+	hint_box.set_content_margin_all(8)
+	_discard_hint.add_theme_stylebox_override("panel", hint_box)
+	_discard_hint.position = Vector2(8, 496)
+	_discard_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_discard_hint.visible = false
+	var hint_label := Label.new()
+	hint_label.text = "Click to discard"
+	hint_label.add_theme_font_size_override("font_size", 16)
+	hint_label.add_theme_color_override("font_color", Color("f4e7d3"))
+	_discard_hint.add_child(hint_label)
+	layer.add_child(_discard_hint)
 	_draw_pile = TextureRect.new()
 	_draw_pile.texture = CARD_BACK_TEXTURE
 	_draw_pile.position = Vector2(1176, 580)
@@ -1717,11 +1773,11 @@ func _update_tooltip() -> void:
 	var mouse := get_viewport().get_mouse_position()
 	# A unit card under the cursor wins over the board: it's what you're
 	# reading right now, whether that's in hand or on the shop shelf.
-	var card_creature := _card_creature_at(mouse)
-	if card_creature != null:
+	var card := _unit_card_at(mouse)
+	if card != null:
 		_set_hovered(-1)
-		_fill_tooltip(card_creature, -1, -1)
-		_place_tooltip(mouse)
+		_fill_tooltip(db[Order.card_creature(card.order_type)], -1, -1)
+		_place_tooltip_beside(card.get_global_rect())
 		return
 	var cell := cell_at(mouse)
 	var u := sim.unit_at(cell.x, cell.y) if cell.x != -1 else null
@@ -1735,9 +1791,9 @@ func _update_tooltip() -> void:
 	_place_tooltip(mouse)
 
 
-## The creature on whichever unit card is under `pos` — hand or shop — or null.
-## Order cards have no creature and fall through to the board.
-func _card_creature_at(pos: Vector2) -> CreatureData:
+## Whichever unit card is under `pos` — hand or shop — or null. Order cards
+## have no creature to describe and fall through to the board.
+func _unit_card_at(pos: Vector2) -> CardController:
 	var cards := _hand_cards()
 	if _shop_open:
 		for c in _shop_cards_box.get_children():
@@ -1747,7 +1803,7 @@ func _card_creature_at(pos: Vector2) -> CreatureData:
 		if not Order.is_unit_card(card.order_type):
 			continue
 		if card.get_global_rect().has_point(pos):
-			return db.get(Order.card_creature(card.order_type))
+			return card
 	return null
 
 
@@ -1782,11 +1838,36 @@ func _fill_tooltip(c: CreatureData, hp: int, windup: int) -> void:
 	_tooltip_abilities.visible = false
 
 
-## Park the tooltip near the cursor, kept inside the window.
+## Park the tooltip beside a card rather than under the cursor — the cursor is
+## on the card, so anchoring to it always covered the thing being described.
+## Prefers the card's right, flips to its left when that would run off screen.
+func _place_tooltip_beside(card: Rect2) -> void:
+	_tooltip.reset_size()
+	var s := _tooltip.size
+	const PAD := 12.0
+	var x := card.position.x + card.size.x + PAD
+	if x + s.x > 1280.0:
+		x = card.position.x - PAD - s.x
+	# Top-aligned with the card, pulled up if a tall panel would overhang.
+	var y := minf(card.position.y, 720.0 - s.y - 8.0)
+	_tooltip.position = Vector2(maxf(x, 8.0), maxf(y, 8.0))
+	_tooltip.visible = true
+
+
+## Park the tooltip near the cursor. When it won't fit on the usual side it
+## flips to the other one rather than being clamped.
 func _place_tooltip(mouse: Vector2) -> void:
 	_tooltip.reset_size()
 	var s := _tooltip.size
-	_tooltip.position = Vector2(minf(mouse.x + 18, 1280 - s.x - 8), minf(mouse.y + 18, 720 - s.y - 8))
+	const PAD := 18.0
+	var x := mouse.x + PAD
+	if x + s.x > 1280.0:
+		x = mouse.x - PAD - s.x   # flip to the left of the cursor
+	var y := mouse.y + PAD
+	if y + s.y > 720.0:
+		y = mouse.y - PAD - s.y   # flip above the cursor
+	# Last resort if it fits on neither side: keep it on screen.
+	_tooltip.position = Vector2(maxf(x, 8.0), maxf(y, 8.0))
 	_tooltip.visible = true
 
 
