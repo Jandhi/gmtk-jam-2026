@@ -10,16 +10,24 @@ const ENEMY_HP_COLOR := Color(0.9, 0.3, 0.3)
 const ACTION_LABELS := {
 	&"strike": "STR", &"shoot": "SHT", &"shield_strike": "SHD", &"riposte": "RIP",
 	&"skirmish": "SKR", &"blast": "BLA", &"line": "LIN", &"heal": "HEA",
+	&"shoot_retreat": "SKS", &"summon": "SUM",
 }
 
-# Actions without an entry here fall back to their text label (blast/line/heal
-# icons not drawn yet — see assets/art/UI/).
+# Every action has art now; ACTION_LABELS is the fallback if one ever goes
+# missing. All 8x8 so they read at the same weight above a unit.
 const ACTION_ICONS := {
 	&"strike": "res://assets/art/UI/sword-icon.png",
 	&"shoot": "res://assets/art/UI/target.png",
 	&"shield_strike": "res://assets/art/UI/shield-icon.png",
 	&"riposte": "res://assets/art/UI/reverse-icon.png",
 	&"skirmish": "res://assets/art/UI/skirmish.png",
+	# Shooting and giving ground is skirmishing at range, so it borrows the
+	# skirmish icon rather than reading as a plain shot.
+	&"shoot_retreat": "res://assets/art/UI/skirmish.png",
+	&"blast": "res://assets/art/UI/blast.png",
+	&"line": "res://assets/art/UI/line.png",
+	&"heal": "res://assets/art/UI/heal.png",
+	&"summon": "res://assets/art/UI/summon.png",
 }
 
 ## Idle squash & stretch, pivoting at the feet (SpriteAnchor sits at ground level).
@@ -40,6 +48,7 @@ const HIT_KNOCKBACK := 16.0
 @onready var health_bar_bg: NinePatchRect = $HealthBarBG
 @onready var health_bar_fill: ColorRect = $HealthBarBG/HealthBarFill
 @onready var shield_bar_fill: ColorRect = $HealthBarBG/ShieldBarFill
+@onready var damage_preview_fill: ColorRect = $HealthBarBG/DamagePreviewFill
 @onready var action_icon: Sprite2D = $ActionIcon
 @onready var hover_circle: Sprite2D = $HoverCircle
 @onready var delay_label: Label = $DelayLabel
@@ -80,6 +89,7 @@ func setup(unit: SimUnit) -> void:
 	hover_circle.visible = false
 	apply_hp_delta(0)  # paint the initial bar
 	set_shown_windup(unit.windup)  # clears the scene's placeholder text
+	clear_intent()  # ditto for the ActionLabel/ActionIcon placeholders ("STR")
 	refresh(unit)
 	_start_idle()
 
@@ -158,6 +168,19 @@ func set_shown_windup(windup: int) -> void:
 func apply_hp_delta(delta: int) -> void:
 	_shown_hp = clampi(_shown_hp + delta, 0, _max_hp)
 	health_bar_fill.size.x = _fill_width * float(_shown_hp) / float(_max_hp)
+
+
+## Hover preview: the chunk of health an incoming hit would take off, shown as
+## a pale bite off the right end of the current bar. Clamped to the health
+## that's actually there, so an overkill doesn't spill past the bar.
+func show_damage_preview(amount: int) -> void:
+	if amount <= 0 or _shown_hp <= 0:
+		damage_preview_fill.visible = false
+		return
+	var width := _fill_width * float(mini(amount, _shown_hp)) / float(_max_hp)
+	damage_preview_fill.position.x = health_bar_fill.position.x + health_bar_fill.size.x - width
+	damage_preview_fill.size.x = width
+	damage_preview_fill.visible = true
 
 
 func refresh(unit: SimUnit) -> void:

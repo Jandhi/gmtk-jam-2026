@@ -19,6 +19,11 @@ var shield_active := false
 var riposte_armed := false
 var riposte_used := false
 
+## Ticks of poison left on this unit. Ticks down at the top of each tick,
+## dealing Sim.POISON_DAMAGE straight to hp — armour and shields don't stop it.
+## Re-poisoning refreshes the duration rather than stacking the damage.
+var poison_ticks := 0
+
 
 func is_alive() -> bool:
 	return hp > 0

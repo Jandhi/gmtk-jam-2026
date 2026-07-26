@@ -51,6 +51,15 @@ offset_right = 60.0
 offset_bottom = 8.0
 color = Color(0.35, 0.6, 1, 1)
 
+[node name="DamagePreviewFill" type="ColorRect" parent="HealthBarBG" unique_id=1704338265]
+visible = false
+layout_mode = 0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 60.0
+offset_bottom = 8.0
+color = Color(1, 1, 1, 0.6)
+
 [node name="DelayLabel" type="Label" parent="." unique_id=1517095839]
 offset_left = -33.0
 offset_top = 11.0

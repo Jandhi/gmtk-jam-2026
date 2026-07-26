@@ -1,8 +1,12 @@
 class_name CreatureDB
 extends RefCounted
 ## Loads creature definitions from the CSV spreadsheet.
-## Columns: name,health,armour,power,delay,action,range,initiative,abilities
+## Columns: name,health,armour,power,delay,action,range,initiative,abilities,
+## unit_type,tier,side,cost,starter_count
 ## abilities is |-separated (e.g. "fast|ignores_armour").
+##
+## data/creatures.csv is generated from the design sheet by
+## data/gen_creatures.py — edit the sheet and re-run that, not the CSV.
 
 
 static func load_all(path: String = "res://data/creatures.csv") -> Dictionary:
@@ -27,5 +31,21 @@ static func load_all(path: String = "res://data/creatures.csv") -> Dictionary:
 		c.initiative = int(row[7])
 		for a in row[8].split("|", false):
 			c.abilities.append(StringName(a.strip_edges()))
+		c.unit_type = row[9].strip_edges()
+		c.tier = int(row[10])
+		c.side = StringName(row[11].strip_edges())
+		c.cost = int(row[12])
+		c.starter_count = int(row[13])
 		db[c.name] = c
 	return db
+
+
+## Every creature on one side's roster, cheapest first — the pool to draw
+## armies and shop stock from. side is &"player" or &"enemy".
+static func pool(db: Dictionary, side: StringName, tier := 0) -> Array:
+	var out := []
+	for c in db.values():
+		if c.side == side and (tier == 0 or c.tier == tier):
+			out.append(c)
+	out.sort_custom(func(a, b): return a.cost < b.cost if a.cost != b.cost else a.name < b.name)
+	return out

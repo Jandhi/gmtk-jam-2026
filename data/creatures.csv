@@ -1,13 +1,26 @@
-name,health,armour,power,delay,action,range,initiative,abilities
-Goblin,8,0,3,2,strike,1,8,
-Wolf,10,0,4,2,strike,1,12,fast
-Skeleton,6,1,3,2,strike,1,6,
-Knight,18,3,5,3,strike,1,7,
-Ogre,22,1,8,4,strike,1,4,slow
-Guard,14,2,4,3,shield_strike,1,6,
-Gladiator,16,1,6,3,riposte,1,9,
-Scout,8,0,4,3,shoot,4,10,
-Assassin,10,0,7,3,skirmish,1,14,ignores_armour
-Mage,8,0,6,4,blast,4,7,
-Adult Red Dragon,30,3,9,5,line,4,11,
-Priest,10,0,4,3,heal,0,5,
+name,health,armour,power,delay,action,range,initiative,abilities,unit_type,tier,side,cost,starter_count
+Skeleton,6,0,4,2,strike,0,5,,Mook,1,enemy,0,0
+Guard,8,1,5,3,shield_strike,0,5,missile_resist,Shield Guy,1,player,6,4
+Skeleton Guard,8,1,5,3,shield_strike,0,5,missile_resist,Shield Guy,1,enemy,6,4
+Mastiff,4,0,3,2,skirmish,0,10,fast|beast,Dog,1,player,3,2
+Wolf,4,0,3,2,skirmish,0,10,fast|beast,Dog,1,enemy,3,2
+Scout,6,0,4,2,shoot,4,6,,Archer,1,player,6,2
+Skeleton Archer,6,0,4,2,shoot,4,6,,Archer,1,enemy,6,2
+Knight,12,2,9,3,strike,0,4,,Strong Guy,2,player,15,0
+Wight,12,2,9,3,strike,0,4,,Strong Guy,2,enemy,15,0
+Ogre Zombie,16,0,10,3,strike,0,3,slow,Big Guy,2,enemy,15,0
+Noble,10,1,6,2,riposte,0,9,,Duelist,2,player,15,0
+Ghast,10,1,6,2,riposte,0,9,,Duelist,2,enemy,15,0
+Priest,8,0,4,2,heal,0,5,,Healer,2,player,12,0
+Ghost,8,0,4,2,heal,0,5,,Healer,2,enemy,12,0
+Mage,7,0,6,3,blast,4,7,ignores_armour,Blaster,2,player,21,0
+Alseid,8,0,6,2,shoot_retreat,4,11,,Elite Archer,2,player,18,0
+Dryad,9,0,4,2,line,3,6,poison,Thorns,2,player,15,0
+Griffon,10,0,6,2,skirmish,0,13,fast|beast,Flyer,2,player,15,0
+Unicorn,14,1,8,3,strike,0,8,fast|beast,Charger,2,player,18,0
+Zombie,12,0,4,2,strike,0,3,slow,Shambler,1,enemy,0,0
+Shadow,3,0,5,2,skirmish,0,12,,Slasher,1,enemy,0,0
+Deva,18,2,8,3,blast,3,8,heals_allies_on_attack,Angel,3,player,27,0
+Vampire,16,1,8,2,skirmish,0,12,lifesteal,Nightstalker,3,enemy,0,0
+Dullahan,20,2,10,3,strike,0,10,fast,Headless Rider,3,enemy,0,0
+Lich,14,0,9,3,summon,4,7,summons_skeletons,Archlich,3,enemy,0,0

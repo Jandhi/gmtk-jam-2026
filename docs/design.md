@@ -25,12 +25,59 @@ attacks — they issue **orders** that reposition units and manipulate action ti
 - **Blast** — shoot that also deals half damage to adjacent units.
 - **Line** — shoot that damages all units in a line, range long.
 - **Heal** — heal, prioritizing nearest damaged unit in your lane, then just the nearest damaged unit.
+- **Missile and Retreat** — shoot, then give ground 1 space. Skirmishing at range.
+- **Summon** — conjure a servant into a free cell beside you (behind first, so
+  it doesn't block your own line of fire), *and* take your shot. Stops
+  conjuring once your side is 8 strong.
 
 ## Special abilities
 
 - **Fast** — move 2 spaces each tick.
 - **Slow** — move only every other tick.
 - **Ignores Armour** — attacks ignore armour.
+- **Missile Resist** — non-melee damage is halved *before* armour applies.
+  Melee is untouched — that's the trade for carrying a shield.
+- **Poison** — any hit that lands refreshes 3 ticks of rot on the target,
+  1 damage each. Rot burns at the top of a tick, before anyone swings, and
+  ignores armour and shields. Refreshes rather than stacks.
+- **Lifesteal** — half the damage dealt comes back as health, capped at max.
+  A fully blocked hit feeds nothing.
+- **Heals Allies on Attack** — every swing mends the nearest wounded *ally*
+  (never yourself) for half your power.
+- **Summons Skeletons** — pairs with the Summon action; what gets conjured is
+  registered by the battle scene, so the sim never hard-codes a creature name.
+
+## Enemy waves
+
+The enemy has no deck and no shop. A wave director inside the sim spends a
+**threat budget** on the enemy roster every few ticks. Both the budget and the
+cadence ramp with the clock, so the opening is a duel you can read and the late
+game is a tide you have to out-tempo.
+
+- Threat per unit: tier 1 = 1, tier 2 = 3, tier 3 = 6.
+- Budget = `1.5 + 0.09 × tick`. Interval starts at 6 ticks and drops by one
+  every 25 ticks, floor 3.
+- Elites are locked until tick 12, supers until tick 40 — on top of having to
+  be affordable, which is usually the binding constraint (first elite ≈ t17,
+  first super ≈ t50).
+- Each pick rolls twice and keeps the costlier, so waves lean toward the
+  biggest thing they can afford without ever being pure elites.
+- Reinforcements arrive at the **back** of the enemy deploy zone, in the
+  emptiest lane, and march up like everyone else.
+
+Two mercy rules keep it from snowballing:
+
+- **A hard ceiling of 7 live enemies.** A wave only brings the difference, so
+  falling behind slows the tide instead of burying you, and clearing the board
+  is what invites the next full wave. Past the mid-game this is the real
+  governor — a bigger budget buys *better* units, not more of them.
+- **A breach costs both sides a beat.** Whoever breaks through, the next wave
+  is pushed back a full interval, so a hard-won breach doesn't immediately hand
+  the board back.
+
+`scripts/tests/wave_report.gd` prints the schedule and an unattended-board
+outcome for eyeballing the ramp (not part of CI). Left alone, a board loses its
+last keep life around tick 71–82.
 
 ## Resolving a tick
 
