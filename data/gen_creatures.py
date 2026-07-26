@@ -9,9 +9,14 @@ ROWS = [
     # Archer to "Skeleton Guard" and the shield to "Skeleton Archer". Swapped
     # here to match Rosalind's sprites (Skeleton Archer.PNG carries the bow,
     # Skeleton Guard.PNG the shield). Fix the sheet and this can come out.
-    ("Shield Guy",     1, 6, 4, "Guard",   "Skeleton Guard", 8, 1,  5, 0,  5, "Shield Strike",       3, "Missile Resist"),
-    ("Dog",            1, 3, 2, "Mastiff", "Wolf",           4, 0, 10, 0,  3, "Skirmish Strike",     2, "Fast"),
-    ("Archer",         1, 6, 2, "Scout",   "Skeleton Archer",6, 0,  6, 4,  4, "Missile",             2, ""),
+    # Starter counts raised 4/2/2 -> 6/4/4 (8 unit cards -> 14). A fallen unit's
+    # card only returns via the discard, so with 8 in a 28-card deck a loss took
+    # a full reshuffle to replace and the player's board shrank all game. More
+    # copies cycle bodies back faster without making them free — sending the
+    # card straight to the draw pile instead tested at 95% wins and stalemates.
+    ("Shield Guy",     1, 6, 6, "Guard",   "Skeleton Guard", 8, 1,  5, 0,  5, "Shield Strike",       3, "Missile Resist"),
+    ("Dog",            1, 3, 4, "Mastiff", "Wolf",           4, 0, 10, 0,  3, "Skirmish Strike",     2, "Fast"),
+    ("Archer",         1, 6, 4, "Scout",   "Skeleton Archer",6, 0,  6, 4,  4, "Missile",             2, ""),
     ("Strong Guy",     2, 15, 0, "Knight",  "Wight",         12, 2,  4, 0,  9, "Strike",              3, ""),
     # Sheet says "Zombie Ogre"; the sprite is Ogre Zombie.PNG and sprites are
     # looked up by name, so the data has to use the art's spelling.

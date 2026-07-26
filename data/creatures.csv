@@ -1,11 +1,11 @@
 name,health,armour,power,delay,action,range,initiative,abilities,unit_type,tier,side,cost,starter_count
 Skeleton,6,0,4,2,strike,0,5,,Mook,1,enemy,0,0
-Guard,8,1,5,3,shield_strike,0,5,missile_resist,Shield Guy,1,player,6,4
-Skeleton Guard,8,1,5,3,shield_strike,0,5,missile_resist,Shield Guy,1,enemy,6,4
-Mastiff,4,0,3,2,skirmish,0,10,fast|beast,Dog,1,player,3,2
-Wolf,4,0,3,2,skirmish,0,10,fast|beast,Dog,1,enemy,3,2
-Scout,6,0,4,2,shoot,4,6,,Archer,1,player,6,2
-Skeleton Archer,6,0,4,2,shoot,4,6,,Archer,1,enemy,6,2
+Guard,8,1,5,3,shield_strike,0,5,missile_resist,Shield Guy,1,player,6,6
+Skeleton Guard,8,1,5,3,shield_strike,0,5,missile_resist,Shield Guy,1,enemy,6,6
+Mastiff,4,0,3,2,skirmish,0,10,fast|beast,Dog,1,player,3,4
+Wolf,4,0,3,2,skirmish,0,10,fast|beast,Dog,1,enemy,3,4
+Scout,6,0,4,2,shoot,4,6,,Archer,1,player,6,4
+Skeleton Archer,6,0,4,2,shoot,4,6,,Archer,1,enemy,6,4
 Knight,12,2,9,3,strike,0,4,,Strong Guy,2,player,15,0
 Wight,12,2,9,3,strike,0,4,,Strong Guy,2,enemy,15,0
 Ogre Zombie,16,0,10,3,strike,0,3,slow,Big Guy,2,enemy,15,0

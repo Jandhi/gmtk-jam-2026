@@ -17,8 +17,12 @@ extends RefCounted
 const LANES := 3
 const COLS := 12
 const SHIELD_REDUCTION := 5
-const KEEP_MAX_HP := 30
-const KEEP_LIVES := 3
+## Keep durability doubles as the match clock — it's what decides how many
+## turns a run lasts. 24x2 puts a competent run at roughly 90 ticks, which is
+## one sitting; 30x3 ran past 190 and turned into End Turn homework.
+## See scripts/tests/playtest_sim.gd for the sweep these came from.
+const KEEP_MAX_HP := 24
+const KEEP_LIVES := 2
 
 # --- Ability tuning ---
 ## `poison`: every hit refreshes this many ticks of rot on the target, each
@@ -72,7 +76,10 @@ const WAVE_THREAT_BY_TIER := {1: 1.0, 2: 3.0, 3: 6.0}
 ## Ceiling on horrors fielded at once. This is the mercy rule: a wave only
 ## brings the difference, so falling behind slows the tide instead of burying
 ## you, and clearing the board is what invites the next full wave.
-const WAVE_MAX_ENEMIES := 7
+## Has to stay near what the player can actually field (~4-5 units), or the
+## cap never binds and the enemy just grinds you down: at 7 a competent player
+## won 5% of the time, at 5 it's a real contest.
+const WAVE_MAX_ENEMIES := 5
 ## Ticks before elites / supers may show up at all, on top of affording them.
 const WAVE_TIER2_TICK := 12
 const WAVE_TIER3_TICK := 40

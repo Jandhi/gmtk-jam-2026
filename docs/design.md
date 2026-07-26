@@ -67,10 +67,12 @@ game is a tide you have to out-tempo.
 
 Two mercy rules keep it from snowballing:
 
-- **A hard ceiling of 7 live enemies.** A wave only brings the difference, so
+- **A hard ceiling of 5 live enemies.** A wave only brings the difference, so
   falling behind slows the tide instead of burying you, and clearing the board
   is what invites the next full wave. Past the mid-game this is the real
-  governor — a bigger budget buys *better* units, not more of them.
+  governor — a bigger budget buys *better* units, not more of them. The number
+  is set near what the player can actually field: at 7 the cap never bound and
+  a competent player won 5% of the time, at 5 it's a contest.
 - **A breach costs both sides a beat.** Whoever breaks through, the next wave
   is pushed back a full interval, so a hard-won breach doesn't immediately hand
   the board back.
@@ -94,7 +96,7 @@ last keep life around tick 71–82.
 Each side has a keep sitting on a virtual tile one past its board edge (every
 lane) — player keep at col −1, enemy keep at col 12. Units that reach the wall
 with no enemy in range attack the keep instead (ranged units hit it from
-`range` tiles out; Line pierces through to it). Keeps have **30 HP and 3
+`range` tiles out; Line pierces through to it). Keeps have **24 HP and 2
 lives**: exhausting the bar costs a life and refills it; at 0 lives the other
 side wins. Keeps have no armour and never attack, so Riposte units hold at
 the wall instead of sieging.
