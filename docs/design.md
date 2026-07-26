@@ -52,6 +52,13 @@ lives**: exhausting the bar costs a life and refills it; at 0 lives the other
 side wins. Keeps have no armour and never attack, so Riposte units hold at
 the wall instead of sieging.
 
+## Shop & gold
+
+Every 20 ticks a shop panel drops down from the top of the screen (turn input
+pauses while it's open). It offers 3 distinct order cards at per-type prices;
+bought cards go to the **discard pile** and cycle in on the next reshuffle.
+Gold: +1 per tick, +3 per enemy unit killed.
+
 ## Player orders (6)
 
 Move in one of four directions, or adjust delay by 1:

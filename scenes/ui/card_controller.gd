@@ -39,6 +39,12 @@ func setup_order(type: StringName) -> void:
 		portrait.texture = null
 
 
+## Re-show the (hidden-by-setup_order) cost label as a shop price tag.
+func show_cost(cost: int) -> void:
+	cost_label.text = "%dg" % cost
+	cost_label.visible = true
+
+
 func set_selected(selected: bool) -> void:
 	pivot_offset = size / 2.0
 	modulate = Color(1, 0.95, 0.6) if selected else Color.WHITE

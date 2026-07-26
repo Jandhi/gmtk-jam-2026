@@ -16,6 +16,38 @@ const CARD_SLOT_TEXTURE := preload("res://assets/art/UI/card_slot.png")
 const HAND_LIMIT := 7
 const OPENING_HAND := 4
 
+const MUSIC_BATTLE := preload("res://assets/audio/music/battle_march.wav")
+const MUSIC_SHOP := preload("res://assets/audio/music/shop_theme.wav")
+
+## Arrays are variant pools — _sfx() picks one at random.
+const SFX := {
+	&"hit_melee": [
+		preload("res://assets/audio/sfx/hit_melee_1.wav"),
+		preload("res://assets/audio/sfx/hit_melee_2.wav"),
+		preload("res://assets/audio/sfx/hit_melee_3.wav"),
+	],
+	&"shoot": preload("res://assets/audio/sfx/shoot.wav"),
+	&"blast": preload("res://assets/audio/sfx/blast.wav"),
+	&"line_breath": preload("res://assets/audio/sfx/line_breath.wav"),
+	&"riposte": preload("res://assets/audio/sfx/riposte.wav"),
+	&"shield_block": preload("res://assets/audio/sfx/shield_block.wav"),
+	&"heal": preload("res://assets/audio/sfx/heal.wav"),
+	&"unit_death": preload("res://assets/audio/sfx/unit_death.wav"),
+	&"keep_hit_melee": preload("res://assets/audio/sfx/keep_hit_melee.wav"),
+	&"keep_hit_ranged": preload("res://assets/audio/sfx/keep_hit_ranged.wav"),
+	&"keep_life_lost": preload("res://assets/audio/sfx/keep_life_lost.wav"),
+	&"card_draw": preload("res://assets/audio/sfx/card_draw.wav"),
+	&"card_select": preload("res://assets/audio/sfx/card_select.wav"),
+	&"card_play": preload("res://assets/audio/sfx/card_play.wav"),
+	&"order_reject": preload("res://assets/audio/sfx/order_reject.wav"),
+	&"shop_open": preload("res://assets/audio/sfx/shop_open.wav"),
+	&"shop_buy": preload("res://assets/audio/sfx/shop_buy.wav"),
+	&"gold_gain": preload("res://assets/audio/sfx/gold_gain.wav"),
+	&"turn_tick": preload("res://assets/audio/sfx/turn_tick.wav"),
+	&"battle_win": preload("res://assets/audio/sfx/battle_win.wav"),
+	&"battle_lose": preload("res://assets/audio/sfx/battle_lose.wav"),
+}
+
 ## Starting deck: order card type -> copies.
 const STARTING_DECK := {
 	Order.ADVANCE: 5,
@@ -29,6 +61,23 @@ const STARTING_DECK := {
 ## Tempo cards may target any unit; movement cards only your own.
 const ANY_TARGET_CARDS: Array[StringName] = [Order.DELAY, Order.HASTEN]
 
+# The shop drops in every SHOP_INTERVAL ticks; bought cards join the discard.
+# Gold trickles in per tick and spikes on kills.
+const SHOP_INTERVAL := 20
+const SHOP_STOCK := 3
+const GOLD_PER_TICK := 1
+const GOLD_PER_KILL := 3
+const SHOP_PRICES := {
+	Order.ADVANCE: 5,
+	Order.RETREAT: 4,
+	Order.MOVE_UP: 4,
+	Order.MOVE_DOWN: 4,
+	Order.DELAY: 6,
+	Order.HASTEN: 8,
+}
+const SHOP_HIDDEN_Y := -340.0
+const SHOP_SHOWN_Y := 140.0
+
 var sim: Sim
 var db: Dictionary
 var views := {}  # unit_id -> UnitController (unit_view.tscn)
@@ -36,9 +85,16 @@ var busy := false
 
 var deck: Array[StringName] = []
 var discard: Array[StringName] = []
+var gold := 0
+
+var _shop_open := false
+var _shop_panel: PanelContainer
+var _shop_cards_box: HBoxContainer
+var _shop_gold_label: Label
 
 var _selected_card: CardController = null
 var _hovered_id := -1
+var _audio_unlocked := false  # web: audio may only start after a user gesture
 
 var _status_label: Label
 var _tick_label: Label
@@ -76,10 +132,13 @@ func _ready() -> void:
 	_build_deck()
 	for i in OPENING_HAND:
 		_draw_card()
-	_refresh_views()
+	_refresh_views(true)
 	_update_status()
 	# Debug: `godot --path . -- --screenshot out.png` saves a frame and quits.
+	# Add `--shop` to capture with the shop open.
 	var args := OS.get_cmdline_user_args()
+	if args.has("--shop"):
+		_open_shop()
 	var shot_idx := args.find("--screenshot")
 	if shot_idx != -1:
 		await _wait(1.0)
@@ -149,6 +208,7 @@ func _draw_card() -> void:
 	if deck.is_empty():
 		return
 	var type: StringName = deck.pop_back()
+	_sfx(&"card_draw")
 	var card: CardController = CARD_SCENE.instantiate()
 	_hand_box.add_child(card)
 	card.setup_order(type)
@@ -161,8 +221,9 @@ func _on_card_gui_input(event: InputEvent, card: CardController) -> void:
 
 
 func _toggle_card(card: CardController) -> void:
-	if busy or sim.winner != -1:
+	if busy or _shop_open or sim.winner != -1:
 		return
+	_sfx(&"card_select")
 	if _selected_card == card:
 		card.set_selected(false)
 		_selected_card = null
@@ -183,8 +244,10 @@ func _play_card(card: CardController, unit: SimUnit) -> void:
 		if e.type == &"order_applied":
 			applied = true
 	if not applied:
+		_sfx(&"order_reject")
 		_float_text(unit.id, "Can't", Color(1, 0.5, 0.4))
 		return
+	_sfx(&"card_play")
 	discard.append(card.order_type)
 	_float_text(unit.id, card.name_label.text, Color(1, 0.9, 0.3))
 	_selected_card = null
@@ -194,6 +257,90 @@ func _play_card(card: CardController, unit: SimUnit) -> void:
 	await _play_events(events)
 	busy = false
 	_update_status()
+
+
+# --- Audio ---
+
+
+## First mouse/key press unlocks audio (web autoplay rule) and starts music.
+func _input(event: InputEvent) -> void:
+	if _audio_unlocked:
+		return
+	if (event is InputEventMouseButton or event is InputEventKey) and event.pressed:
+		_audio_unlocked = true
+		AudioManager.play_music(MUSIC_SHOP if _shop_open else MUSIC_BATTLE)
+
+
+func _sfx(key: StringName, volume_db := 0.0) -> void:
+	if not _audio_unlocked:
+		return
+	var stream = SFX[key]
+	if stream is Array:
+		stream = stream[randi() % stream.size()]
+	AudioManager.play_sfx(stream, volume_db)
+
+
+# --- Shop ---
+
+
+func _open_shop() -> void:
+	_shop_open = true
+	_sfx(&"shop_open")
+	if _audio_unlocked:
+		AudioManager.play_music(MUSIC_SHOP)
+	for c in _shop_cards_box.get_children():
+		c.queue_free()
+	var types := Order.ALL.duplicate()
+	types.shuffle()
+	for i in SHOP_STOCK:
+		var card: CardController = CARD_SCENE.instantiate()
+		_shop_cards_box.add_child(card)
+		card.setup_order(types[i])
+		card.show_cost(SHOP_PRICES[types[i]])
+		card.gui_input.connect(_on_shop_card_input.bind(card))
+	_refresh_shop_gold()
+	var tw := create_tween()
+	tw.tween_property(_shop_panel, "position:y", SHOP_SHOWN_Y, 0.4) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _close_shop() -> void:
+	_shop_open = false
+	if _audio_unlocked and sim.winner == -1:
+		AudioManager.play_music(MUSIC_BATTLE)
+	var tw := create_tween()
+	tw.tween_property(_shop_panel, "position:y", SHOP_HIDDEN_Y, 0.3) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_update_status()
+
+
+func _on_shop_card_input(event: InputEvent, card: CardController) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_buy_card(card)
+
+
+## Bought cards go straight to the discard pile and cycle in on reshuffle.
+func _buy_card(card: CardController) -> void:
+	if card.get_meta("sold", false):
+		return
+	var price: int = SHOP_PRICES[card.order_type]
+	if gold < price:
+		_sfx(&"order_reject")
+		card.modulate = Color(1, 0.4, 0.4)
+		var tw := create_tween()
+		tw.tween_property(card, "modulate", Color.WHITE, 0.3)
+		return
+	_sfx(&"shop_buy")
+	gold -= price
+	discard.append(card.order_type)
+	card.set_meta("sold", true)
+	card.modulate = Color(0.45, 0.45, 0.45)
+	_refresh_shop_gold()
+	_update_status()
+
+
+func _refresh_shop_gold() -> void:
+	_shop_gold_label.text = "The shop rolls in!  You have %d gold." % gold
 
 
 # --- Input & turn loop ---
@@ -230,28 +377,33 @@ func _click(pos: Vector2) -> void:
 		return
 	var own_only: bool = not (_selected_card.order_type in ANY_TARGET_CARDS)
 	if own_only and u.side != Sim.SIDE_PLAYER:
+		_sfx(&"order_reject")
 		_float_text(u.id, "Your units only", Color(1, 0.6, 0.4))
 		return
 	_play_card(_selected_card, u)
 
 
 func _end_turn() -> void:
-	if busy or sim.winner != -1:
+	if busy or _shop_open or sim.winner != -1:
 		return
 	if _selected_card != null:
 		_selected_card.set_selected(false)
 		_selected_card = null
 	busy = true
+	_sfx(&"turn_tick")
 	var events := sim.tick()
+	gold += GOLD_PER_TICK
 	_update_status()
 	await _play_events(events)
 	busy = false
 	_draw_card()
 	_update_status()
+	if sim.winner == -1 and sim.tick_count % SHOP_INTERVAL == 0:
+		_open_shop()
 
 
 func _update_status() -> void:
-	_tick_label.text = "Tick %d" % sim.tick_count
+	_tick_label.text = "Tick %d    Gold %d" % [sim.tick_count, gold]
 	_refresh_piles()
 	if busy:
 		_status_label.text = "Resolving..."
@@ -423,6 +575,58 @@ func _build_ui() -> void:
 	_restart_btn.visible = false
 	layer.add_child(_restart_btn)
 
+	# Debug menu: dev helpers, not part of the game.
+	var debug_btn := Button.new()
+	debug_btn.text = "Debug"
+	debug_btn.add_theme_font_size_override("font_size", 16)
+	debug_btn.position = Vector2(940, 24)
+	debug_btn.custom_minimum_size = Vector2(80, 44)
+	layer.add_child(debug_btn)
+	var debug_box := VBoxContainer.new()
+	debug_box.position = Vector2(940, 72)
+	debug_box.visible = false
+	layer.add_child(debug_box)
+	debug_btn.pressed.connect(func(): debug_box.visible = not debug_box.visible)
+	var dbg_shop_btn := Button.new()
+	dbg_shop_btn.text = "Trigger Shop"
+	dbg_shop_btn.add_theme_font_size_override("font_size", 16)
+	dbg_shop_btn.pressed.connect(func():
+		if not _shop_open and not busy:
+			_open_shop())
+	debug_box.add_child(dbg_shop_btn)
+	var dbg_gold_btn := Button.new()
+	dbg_gold_btn.text = "+10 Gold"
+	dbg_gold_btn.add_theme_font_size_override("font_size", 16)
+	dbg_gold_btn.pressed.connect(func():
+		gold += 10
+		_update_status()
+		if _shop_open:
+			_refresh_shop_gold())
+	debug_box.add_child(dbg_gold_btn)
+
+	# Shop panel parks above the screen and tweens down when it opens.
+	# Added last so it draws over the rest of the UI.
+	_shop_panel = PanelContainer.new()
+	_shop_panel.custom_minimum_size = Vector2(480, 0)
+	_shop_panel.position = Vector2(400, SHOP_HIDDEN_Y)
+	layer.add_child(_shop_panel)
+	var shop_box := VBoxContainer.new()
+	shop_box.add_theme_constant_override("separation", 12)
+	_shop_panel.add_child(shop_box)
+	_shop_gold_label = Label.new()
+	_shop_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_gold_label.add_theme_font_size_override("font_size", 20)
+	shop_box.add_child(_shop_gold_label)
+	_shop_cards_box = HBoxContainer.new()
+	_shop_cards_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_shop_cards_box.add_theme_constant_override("separation", 12)
+	shop_box.add_child(_shop_cards_box)
+	var leave_btn := Button.new()
+	leave_btn.text = "Leave Shop"
+	leave_btn.add_theme_font_size_override("font_size", 20)
+	leave_btn.pressed.connect(_close_shop)
+	shop_box.add_child(leave_btn)
+
 
 # --- Event playback ---
 
@@ -436,11 +640,30 @@ func _play_events(events: Array) -> void:
 					var tw := create_tween()
 					tw.tween_property(v, "position", cell_pos(e.data.lane, e.data.col), 0.12)
 					await tw.finished
+			&"windup_changed", &"windup_started":
+				var wv: UnitController = views.get(e.data.unit)
+				if wv != null:
+					wv.set_shown_windup(e.data.windup)
+					if e.type == &"windup_started":
+						wv.show_intent_action(e.data.action)
+					await _wait(0.06)
 			&"action_fired", &"shield_counter":
+				var fv: UnitController = views.get(e.data.unit)
+				if fv != null:
+					fv.clear_intent()
+				if e.type == &"action_fired":
+					match e.data.action:
+						&"shoot":
+							_sfx(&"shoot")
+						&"blast":
+							_sfx(&"blast")
+						&"line":
+							_sfx(&"line_breath")
 				_punch(e.data.unit)
 				await _wait(0.12)
 			&"damage_dealt":
 				var text := "-%d" % e.data.amount if e.data.amount > 0 else "Blocked"
+				_sfx(&"shield_block" if e.data.amount == 0 else &"hit_melee")
 				_float_text(e.data.target, text, Color(1, 0.4, 0.4))
 				_hit_reaction(e.data)
 				var hv: UnitController = views.get(e.data.target)
@@ -448,12 +671,19 @@ func _play_events(events: Array) -> void:
 					hv.apply_hp_delta(-e.data.amount)
 				await _wait(0.26)
 			&"healed":
+				_sfx(&"heal", -6.0)
 				_float_text(e.data.target, "+%d" % e.data.amount, Color(0.4, 1, 0.4))
 				var heal_v: UnitController = views.get(e.data.target)
 				if heal_v != null:
 					heal_v.apply_hp_delta(e.data.amount)
 				await _wait(0.22)
 			&"riposte_triggered":
+				# The counter consumes the windup: clear number + intent icon.
+				var rv: UnitController = views.get(e.data.unit)
+				if rv != null:
+					rv.set_shown_windup(0)
+					rv.clear_intent()
+				_sfx(&"riposte")
 				_float_text(e.data.unit, "Riposte!", Color(1, 0.9, 0.3))
 				await _wait(0.18)
 			&"shield_up":
@@ -467,12 +697,14 @@ func _play_events(events: Array) -> void:
 				if kav != null and e.data.melee:
 					kav.melee_attack(toward_keep)
 					await _wait(0.08)
+				_sfx(&"keep_hit_melee" if e.data.melee else &"keep_hit_ranged")
 				_shown_keep_hp[e.data.side] = e.data.hp
 				_refresh_keep(e.data.side)
 				_shake_keep(e.data.side, toward_keep)
 				_float_keep_text(e.data.side, "-%d" % e.data.amount, Color(1, 0.4, 0.4))
 				await _wait(0.26)
 			&"keep_life_lost":
+				_sfx(&"keep_life_lost", -6.0)
 				_shown_keep_hp[e.data.side] = e.data.hp
 				_shown_keep_lives[e.data.side] = e.data.lives
 				_refresh_keep(e.data.side)
@@ -480,6 +712,12 @@ func _play_events(events: Array) -> void:
 				await _wait(0.4)
 			&"unit_died":
 				var dv: UnitController = views.get(e.data.unit)
+				_sfx(&"unit_death")
+				if sim.get_unit(e.data.unit).side == Sim.SIDE_ENEMY:
+					gold += GOLD_PER_KILL
+					_sfx(&"gold_gain")
+					if dv != null:
+						_float_text_at(dv.position + Vector2(-16, -190), "+%dg" % GOLD_PER_KILL, Color(1, 0.85, 0.3))
 				if dv != null:
 					views.erase(e.data.unit)
 					var tw := create_tween()
@@ -487,23 +725,29 @@ func _play_events(events: Array) -> void:
 					tw.tween_callback(dv.queue_free)
 					await tw.finished
 			&"battle_ended":
+				AudioManager.stop_music()
+				_sfx(&"battle_win" if e.data.winner == Sim.SIDE_PLAYER else &"battle_lose")
 				_banner.text = "VICTORY" if e.data.winner == Sim.SIDE_PLAYER else "DEFEAT"
 				_banner.modulate = Color(0.5, 1, 0.5) if e.data.winner == Sim.SIDE_PLAYER else Color(1, 0.45, 0.45)
 				_banner.visible = true
 				_restart_btn.visible = true
 		_refresh_views()
-	_refresh_views()
+	_refresh_views(true)
 
 
 func _wait(seconds: float) -> void:
 	await get_tree().create_timer(seconds).timeout
 
 
-func _refresh_views() -> void:
+## Intents only repaint from sim state when a tick is fully replayed —
+## mid-playback they are fed by windup/action events instead.
+func _refresh_views(include_intents := false) -> void:
 	for u in sim.alive_units():
 		var v: UnitController = views.get(u.id)
 		if v != null:
-			v.refresh(u, u.windup <= 0 and sim.idle_intent(u) == &"move")
+			v.refresh(u)
+			if include_intents:
+				v.refresh_intent(u, u.windup <= 0 and sim.idle_intent(u) == &"move")
 
 
 func _punch(unit_id: int) -> void:

@@ -79,6 +79,7 @@ func setup(unit: SimUnit) -> void:
 	_anchor_home = sprite_anchor.position
 	hover_circle.visible = false
 	apply_hp_delta(0)  # paint the initial bar
+	set_shown_windup(unit.windup)  # clears the scene's placeholder text
 	refresh(unit)
 	_start_idle()
 
@@ -144,6 +145,13 @@ func _play_impulse(peak: Vector2) -> void:
 	tw.tween_callback(_loop_idle)
 
 
+## Like health, the shown countdown lags the sim: battle.gd feeds it from
+## windup_changed/windup_started events as each unit takes its step, so the
+## numbers tick down one unit at a time instead of snapping to final state.
+func set_shown_windup(windup: int) -> void:
+	delay_label.text = str(windup) if windup > 0 else ""
+
+
 ## The shown health lags the sim: the sim resolves a whole tick up front, so
 ## battle.gd applies damage/heal deltas as each animation lands rather than
 ## refresh() reading the (already final) sim hp mid-playback.
@@ -152,10 +160,7 @@ func apply_hp_delta(delta: int) -> void:
 	health_bar_fill.size.x = _fill_width * float(_shown_hp) / float(_max_hp)
 
 
-## Three display states: winding up (icon + number), marching (shoe),
-## or genuinely inert (nothing shown).
-func refresh(unit: SimUnit, moving := false) -> void:
-	delay_label.text = str(unit.windup) if unit.windup > 0 else ""
+func refresh(unit: SimUnit) -> void:
 	# Active shielding shows as a blue overlay on the health bar, sized in
 	# HP-equivalents of the damage reduction (full bar if it exceeds max HP).
 	var shield_frac := 0.0
@@ -163,20 +168,44 @@ func refresh(unit: SimUnit, moving := false) -> void:
 		shield_frac = minf(float(Sim.SHIELD_REDUCTION) / float(_max_hp), 1.0)
 	shield_bar_fill.size.x = _fill_width * shield_frac
 	shield_bar_fill.visible = shield_frac > 0.0
-	var icon_path := ""
-	var fallback_label := false
-	if unit.windup > 0:
-		icon_path = ACTION_ICONS.get(unit.creature.action, "")
-		fallback_label = icon_path.is_empty()  # blast/line/heal icons not drawn yet
-	elif moving:
-		icon_path = "res://assets/art/UI/shoe-icon.png"
-	action_icon.flip_h = unit.windup <= 0 and moving and unit.side == Sim.SIDE_ENEMY
+
+
+# --- Intent display (icon + fallback label) ---
+# Event-fed during playback (icon appears as the windup starts, clears as the
+# action fires), then set authoritatively from sim state after the tick
+# finishes replaying. Three states: action, marching (shoe), or nothing.
+
+
+func show_intent_action(action: StringName) -> void:
+	var icon_path: String = ACTION_ICONS.get(action, "")
 	if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
 		action_icon.texture = load(icon_path)
+		action_icon.flip_h = false
 		action_icon.visible = true
 		action_label.visible = false
 	else:
+		# blast/line/heal icons not drawn yet
 		action_icon.visible = false
-		action_label.visible = fallback_label
-		if fallback_label:
-			action_label.text = ACTION_LABELS.get(unit.creature.action, "?")
+		action_label.text = ACTION_LABELS.get(action, "?")
+		action_label.visible = true
+
+
+func show_intent_move(flip: bool) -> void:
+	action_icon.texture = load("res://assets/art/UI/shoe-icon.png")
+	action_icon.flip_h = flip
+	action_icon.visible = true
+	action_label.visible = false
+
+
+func clear_intent() -> void:
+	action_icon.visible = false
+	action_label.visible = false
+
+
+func refresh_intent(unit: SimUnit, moving: bool) -> void:
+	if unit.windup > 0:
+		show_intent_action(unit.creature.action)
+	elif moving:
+		show_intent_move(unit.side == Sim.SIDE_ENEMY)
+	else:
+		clear_intent()
